@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Miu Todo List</title>
+    <script type="module" src="/miu.js"></script>
+  </head>
+
+  <body>
+    <h1>Todo List</h1>
+    <miu-app store="todo">
+      <input miu-bind="newTask" placeholder="New task...">
+      <button miu-on:click="addTask">Add</button>
+
+      <miu-list for-each="tasks">
+        <template>
+          <div>
+            <input type="checkbox" miu-bind="done">
+            <span miu-bind="text"></span>
+            <button miu-on:click="removeTask" data-id="index">×</button>
+          </div>
+        </template>
+      </miu-list>
+
+    </miu-app>
+
+    <script type="module">
+      import { Store } from '/miu.js';
+
+      const todoStore = new Store('todo', {
+        tasks: [],
+        newTask: '',
+
+        addTask() {
+          if (this.newTask.trim()) {
+            this.tasks.push({ text: this.newTask, done: false });
+            this.newTask = '';
+          }
+          document.querySelector('input').focus();
+        },
+
+        removeTask(event) {
+          const index = event.target.dataset.id;
+          this.tasks.splice(index, 1);
+        }
+      });
+
+      document.addEventListener('DOMContentLoaded', () => {
+        const input = document.querySelector('input');
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            todoStore.addTask();
+          }
+        });
+      });
+    </script>
+
+  </body>
+</html>
