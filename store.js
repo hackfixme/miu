@@ -30,13 +30,28 @@ export class Store {
 
     const handler = {
       get: (target, prop) => {
-        // Handle getters
         const value = target[prop];
+
+        // Handle getters
         if (typeof value === 'function' && value.constructor.name === 'get') {
           return value.call(this.state);
         }
 
         const newPath = path ? `${path}.${prop}` : prop;
+
+        // Handle array methods
+        if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
+          return (...args) => {
+            const result = Array.prototype[prop].apply(target, args);
+
+            // Notify on array mutations
+            if (['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(prop)) {
+              this._notifyListeners(path, target);
+            }
+
+            return result;
+          };
+        }
 
         // Recursively create proxies for nested objects
         if (typeof value === 'object' && value !== null) {
@@ -49,7 +64,18 @@ export class Store {
       set: (target, prop, value) => {
         const newPath = path ? `${path}.${prop}` : prop;
         target[prop] = value;
-        this._notifyListeners(newPath, value);
+
+        // Special handling for array length changes
+        if (Array.isArray(target) && prop === 'length') {
+          this._notifyListeners(path, target);
+        } else {
+          this._notifyListeners(newPath, value);
+          // Also notify parent if it's an array element change
+          if (Array.isArray(target)) {
+            this._notifyListeners(path, target);
+          }
+        }
+
         return true;
       }
     };
