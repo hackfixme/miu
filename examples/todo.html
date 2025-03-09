@@ -25,7 +25,7 @@
           <li>
             <input type="checkbox" data-miu-bind="done">
             <span data-miu-bind="text"></span>
-            <button data-miu-click="removeTask" data-id="index">×</button>
+            <button data-miu-click="removeTask">×</button>
           </li>
         </template>
       </ul>
@@ -47,9 +47,8 @@
           document.querySelector('input').focus();
         },
 
-        removeTask(event) {
-          const index = event.target.dataset.id;
-          this.tasks.splice(index, 1);
+        removeTask(event, context) {
+          this.tasks.splice(context.index, 1);
         }
       });
 

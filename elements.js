@@ -6,6 +6,10 @@ const MIU_ATTRS = {
   ON_CLICK: 'data-miu-click'
 };
 
+// Context passed to event handlers within a for loop.
+// It includes the element and its index within the loop.
+const bindingContexts = new WeakMap();
+
 function processBindings(root, store, context = null) {
   root.querySelectorAll(`[${MIU_ATTRS.BIND}]`).forEach(element => {
     // TODO: Support JSON path
@@ -42,7 +46,8 @@ function processBindings(root, store, context = null) {
     element.addEventListener('click', (event) => {
       if (typeof store[methodName] === 'function') {
         event.preventDefault();
-        store[methodName](event);
+        const bindingContext = bindingContexts.get(event.target);
+        store[methodName].call(store, event, bindingContext);
       }
     });
   });
@@ -85,8 +90,9 @@ const bindingUtil = {
         items.forEach((item, index) => {
           const clone = document.importNode(template.content, true);
 
-          clone.querySelectorAll('[data-id="index"]').forEach(el => {
-            el.dataset.id = index;
+          // Store context for all elements in this template instance
+          clone.querySelectorAll('*').forEach(el => {
+            bindingContexts.set(el, { item, index });
           });
 
           processBindings(clone, store, item);
