@@ -18,14 +18,14 @@
 
     <miu-el store="todo">
       <input data-miu-bind="newTask" placeholder="New task...">
-      <button data-miu-click="addTask">Add</button>
+      <button data-miu-on="click:addTask">Add</button>
 
       <ul data-miu-for="tasks">
         <template>
           <li>
             <input type="checkbox" data-miu-bind="done">
             <span data-miu-bind="text"></span>
-            <button data-miu-click="removeTask">×</button>
+            <button data-miu-on="click:removeTask">×</button>
           </li>
         </template>
       </ul>

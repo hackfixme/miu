@@ -3,7 +3,7 @@ import { StoreRegistry } from './store.js';
 const MIU_ATTRS = {
   BIND: 'data-miu-bind',
   FOR: 'data-miu-for',
-  ON_CLICK: 'data-miu-click'
+  ON: 'data-miu-on'
 };
 
 // Context passed to event handlers within a for loop.
@@ -41,15 +41,19 @@ function processBindings(root, store, context = null) {
     }
   });
 
-  root.querySelectorAll(`[${MIU_ATTRS.ON_CLICK}]`).forEach(element => {
-    const methodName = element.getAttribute(MIU_ATTRS.ON_CLICK);
-    element.addEventListener('click', (event) => {
-      if (typeof store[methodName] === 'function') {
-        event.preventDefault();
-        const bindingContext = bindingContexts.get(event.target);
-        store[methodName].call(store, event, bindingContext);
-      }
-    });
+  root.querySelectorAll(`[${MIU_ATTRS.ON}]`).forEach(element => {
+    const binding = element.getAttribute(MIU_ATTRS.ON);
+    const [eventName, methodName] = binding.split(':');
+
+    if (eventName && methodName) {
+      element.addEventListener(eventName, (event) => {
+        if (typeof store[methodName] === 'function') {
+          event.preventDefault();
+          const bindingContext = bindingContexts.get(event.target);
+          store[methodName].call(store, event, bindingContext);
+        }
+      });
+    }
   });
 }
 
