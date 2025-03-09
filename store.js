@@ -1,7 +1,25 @@
 export class Store {
   constructor(initialState = {}) {
+    this.state = this._createProxy(initialState);
     this._listeners = new Map();
-    return this._createProxy(initialState);
+    return {
+      ...this.state,
+      subscribe: this.subscribe.bind(this)
+    };
+  }
+
+  subscribe(path, callback) {
+    if (!this._listeners.has(path)) {
+      this._listeners.set(path, new Set());
+    }
+    this._listeners.get(path).add(callback);
+
+    return () => {
+      this._listeners.get(path).delete(callback);
+      if (this._listeners.get(path).size === 0) {
+        this._listeners.delete(path);
+      }
+    };
   }
 
   _createProxy(obj, path = '') {
@@ -15,7 +33,7 @@ export class Store {
         // Handle getters
         const value = target[prop];
         if (typeof value === 'function' && value.constructor.name === 'get') {
-          return value.call(this);
+          return value.call(this.state);
         }
 
         const newPath = path ? `${path}.${prop}` : prop;
@@ -40,6 +58,24 @@ export class Store {
   }
 
   _notifyListeners(path, value) {
-    console.log(`State changed: ${path} = ${value}`);
+    // Notify exact path matches
+    if (this._listeners.has(path)) {
+      this._listeners.get(path).forEach(callback => callback(value));
+    }
+
+    // Notify parent paths (e.g., 'user' listeners get notified of 'user.name' changes)
+    const parts = path.split('.');
+    while (parts.length > 1) {
+      parts.pop();
+      const parentPath = parts.join('.');
+      if (this._listeners.has(parentPath)) {
+        const parentValue = this._getValueByPath(parentPath);
+        this._listeners.get(parentPath).forEach(callback => callback(parentValue));
+      }
+    }
+  }
+
+  _getValueByPath(path) {
+    return path.split('.').reduce((obj, key) => obj[key], this.state);
   }
 }
