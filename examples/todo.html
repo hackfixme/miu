@@ -3,26 +3,34 @@
   <head>
     <meta charset="utf-8" />
     <title>Miu Todo List</title>
+    <style>
+      ul {
+        list-style-type: none;
+        padding: 0;
+        margin: 0;
+      }
+    </style>
     <script type="module" src="/miu.js"></script>
   </head>
 
   <body>
     <h1>Todo List</h1>
-    <miu-app store="todo">
-      <input miu-bind="newTask" placeholder="New task...">
-      <button miu-on:click="addTask">Add</button>
 
-      <miu-list for-each="tasks">
+    <miu-el store="todo">
+      <input data-miu-bind="newTask" placeholder="New task...">
+      <button data-miu-click="addTask">Add</button>
+
+      <ul data-miu-for="tasks">
         <template>
-          <div>
-            <input type="checkbox" miu-bind="done">
-            <span miu-bind="text"></span>
-            <button miu-on:click="removeTask" data-id="index">×</button>
-          </div>
+          <li>
+            <input type="checkbox" data-miu-bind="done">
+            <span data-miu-bind="text"></span>
+            <button data-miu-click="removeTask" data-id="index">×</button>
+          </li>
         </template>
-      </miu-list>
+      </ul>
 
-    </miu-app>
+    </miu-el>
 
     <script type="module">
       import { Store } from '/miu.js';

@@ -1,135 +1,145 @@
 import { StoreRegistry } from './store.js';
 
-export function initElements() {
-  // Utilities for handling element bindings
-  const bindingUtil = {
-    bindInput(element, store, path) {
-      element.value = store[path] || '';
-      element.addEventListener('input', (e) => {
-        store[path] = e.target.value;
-      });
-      store.subscribe(path, (value) => {
-        if (element.value !== value) {
-          element.value = value;
-        }
-      });
-    },
+const MIU_ATTRS = {
+  BIND: 'data-miu-bind',
+  FOR: 'data-miu-for',
+  ON_CLICK: 'data-miu-click'
+};
 
-    bindText(element, store, path) {
-      element.textContent = store[path] || '';
-      store.subscribe(path, (value) => {
-        element.textContent = value;
-      });
-    }
-  };
-
-  // Main app container element
-  customElements.define('miu-app', class extends HTMLElement {
-    async connectedCallback() {
-      const storeName = this.getAttribute('store');
-      try {
-        this.store = await StoreRegistry.waitFor(storeName);
-        this._processBindings(this);
-        this.dispatchEvent(new CustomEvent('storeready'));
-      } catch (err) {
-        console.error(`Error connecting to store "${storeName}":`, err);
-      }
-    }
-
-    _processBindings(root) {
-      root.querySelectorAll('[miu-bind]').forEach(element => {
-        const path = element.getAttribute('miu-bind');
-        if (element.tagName === 'INPUT') {
-          bindingUtil.bindInput(element, this.store, path);
+function processBindings(root, store, context = null) {
+  root.querySelectorAll(`[${MIU_ATTRS.BIND}]`).forEach(element => {
+    // TODO: Support JSON path
+    const path = element.getAttribute(MIU_ATTRS.BIND);
+    if (context) {
+      // For array elements
+      if (element.tagName === 'INPUT') {
+        element.value = context[path] || '';
+        if (element.type === 'checkbox') {
+          element.checked = context[path] || false;
+          element.addEventListener('change', (e) => {
+            context[path] = e.target.checked;
+          });
         } else {
-          bindingUtil.bindText(element, this.store, path);
+          element.addEventListener('input', (e) => {
+            context[path] = e.target.value;
+          });
         }
-      });
-
-      root.querySelectorAll('[miu-on\\:click]').forEach(element => {
-        const methodName = element.getAttribute('miu-on:click');
-        element.addEventListener('click', (event) => {
-          if (typeof this.store[methodName] === 'function') {
-            this.store[methodName](event);
-          }
-        });
-      });
+      } else {
+        element.textContent = context[path] || '';
+      }
+    } else {
+      // Normal binding
+      if (element.tagName === 'INPUT') {
+        bindingUtil.bindInput(element, store, path);
+      } else {
+        bindingUtil.bindText(element, store, path);
+      }
     }
   });
 
-  // List rendering element
-  customElements.define('miu-list', class extends HTMLElement {
-    async connectedCallback() {
-      const storeName = this.closest('miu-app').getAttribute('store');
-      try {
-        this.store = await StoreRegistry.waitFor(storeName);
-        const path = this.getAttribute('for-each');
-        this.template = this.querySelector('template');
-
-        if (!this.template) {
-          console.error('miu-list requires a template element');
-          return;
-        }
-
-        this._render(this.store[path]);
-        this.store.subscribe(path, (items) => {
-          this._render(items);
-        });
-      } catch (err) {
-        console.error(`Error connecting to store "${storeName}":`, err);
+  root.querySelectorAll(`[${MIU_ATTRS.ON_CLICK}]`).forEach(element => {
+    const methodName = element.getAttribute(MIU_ATTRS.ON_CLICK);
+    element.addEventListener('click', (event) => {
+      if (typeof store[methodName] === 'function') {
+        event.preventDefault();
+        store[methodName](event);
       }
+    });
+  });
+}
+
+// Utilities for handling element bindings
+const bindingUtil = {
+  bindInput(element, store, path) {
+    element.value = store[path] || '';
+    element.addEventListener('input', (e) => {
+      store[path] = e.target.value;
+    });
+    store.subscribe(path, (value) => {
+      if (element.value !== value) {
+        element.value = value;
+      }
+    });
+  },
+
+  bindText(element, store, path) {
+    element.textContent = store[path] || '';
+    store.subscribe(path, (value) => {
+      element.textContent = value;
+    });
+  },
+
+  bindForEach(element, store, path) {
+    const template = element.querySelector('template');
+    if (!template) {
+      console.error(`${MIU_ATTRS.FOR} requires a template element`);
+      return;
     }
 
-    _processItemBindings(element, item, index) {
-      element.querySelectorAll('[miu-bind]').forEach(el => {
-        const prop = el.getAttribute('miu-bind');
-
-        if (el.tagName === 'INPUT') {
-          el.value = item[prop] || '';
-
-          if (el.type === 'checkbox') {
-            el.checked = item[prop] || false;
-            el.addEventListener('change', (e) => {
-              item[prop] = e.target.checked;
-            });
-          } else {
-            el.addEventListener('input', (e) => {
-              item[prop] = e.target.value;
-            });
-          }
-        } else {
-          el.textContent = item[prop] || '';
-        }
-      });
-
-      element.querySelectorAll('[miu-on\\:click]').forEach(el => {
-        const methodName = el.getAttribute('miu-on:click');
-        el.addEventListener('click', (event) => {
-          if (typeof this.store[methodName] === 'function') {
-            event.preventDefault();
-            this.store[methodName](event);
-          }
-        });
-      });
-    }
-
-    _render(items) {
-      const template = this.template;
-      this.textContent = '';
-      this.appendChild(template);
+    const render = (items) => {
+      // Preserve the template
+      element.textContent = '';
+      element.appendChild(template);
 
       if (Array.isArray(items)) {
         items.forEach((item, index) => {
-          const clone = document.importNode(this.template.content, true);
+          const clone = document.importNode(template.content, true);
 
           clone.querySelectorAll('[data-id="index"]').forEach(el => {
             el.dataset.id = index;
           });
 
-          this._processItemBindings(clone, item, index);
-          this.appendChild(clone);
+          processBindings(clone, store, item);
+          element.appendChild(clone);
         });
       }
+    };
+
+    render(store[path]);
+    store.subscribe(path, render);
+  }
+};
+
+class MiuElement extends HTMLElement {
+  static observedAttributes = ['store'];
+
+  async connectedCallback() {
+    // Try to get store from parent first if no store attribute
+    const storeName = this.getAttribute('store');
+    const parentEl = this.closest('miu-el:not(:scope)');
+
+    try {
+      if (storeName) {
+        this.store = await StoreRegistry.waitFor(storeName);
+      } else if (parentEl) {
+        // Inherit parent's store if no store specified
+        this.store = parentEl.store;
+      } else {
+        throw new Error('No store found');
+      }
+
+      // Process for bindings first
+      this.querySelectorAll(`[${MIU_ATTRS.FOR}]`).forEach(element => {
+        const path = element.getAttribute(MIU_ATTRS.FOR);
+        bindingUtil.bindForEach(element, this.store, path);
+      });
+
+      // Process regular bindings
+      processBindings(this, this.store);
+
+      this.dispatchEvent(new CustomEvent('storeready'));
+    } catch (err) {
+      console.error(`Error connecting to store:`, err);
     }
-  });
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (name === 'store' && oldValue && oldValue !== newValue && this.isConnected) {
+      this.connectedCallback(); // Reinitialize with new store
+    }
+  }
+}
+
+export function initElements() {
+  customElements.define('miu-el', MiuElement);
 }
