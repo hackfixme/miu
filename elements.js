@@ -45,15 +45,20 @@ function processBindings(root, store, context = null) {
     const binding = element.getAttribute(MIU_ATTRS.ON);
     const [eventName, methodName] = binding.split(':');
 
-    if (eventName && methodName) {
-      element.addEventListener(eventName, (event) => {
-        if (typeof store[methodName] === 'function') {
-          event.preventDefault();
-          const bindingContext = bindingContexts.get(event.target);
-          store[methodName].call(store, event, bindingContext);
-        }
-      });
+    if (!eventName || !methodName) {
+      console.error(`Invalid event binding syntax: "${binding}". Expected "event:method"`);
+      return;
     }
+
+    if (typeof store[methodName] !== 'function') {
+      console.warn(`Method "${methodName}" not found in store`);
+    }
+
+    element.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      const bindingContext = bindingContexts.get(event.target);
+      store[methodName].call(store, event, bindingContext);
+    });
   });
 }
 
