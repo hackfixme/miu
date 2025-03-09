@@ -1,11 +1,46 @@
-export class Store {
-  constructor(initialState = {}) {
-    this.state = this._createProxy(initialState);
+class StoreRegistry {
+  constructor() {
+    this._stores = new Map();
+    this._storeCallbacks = new Map();
+  }
+
+  register(name, store) {
+    this._stores.set(name, store);
+    if (this._storeCallbacks.has(name)) {
+      this._storeCallbacks.get(name).forEach(callback => callback(store));
+      this._storeCallbacks.delete(name);
+    }
+  }
+
+  waitFor(name) {
+    return new Promise(resolve => {
+      const store = this._stores.get(name);
+      if (store) {
+        resolve(store);
+      } else {
+        if (!this._storeCallbacks.has(name)) {
+          this._storeCallbacks.set(name, new Set());
+        }
+        this._storeCallbacks.get(name).add(resolve);
+      }
+    });
+  }
+}
+
+const registry = new StoreRegistry();
+
+class Store {
+  constructor(name, initialState = {}) {
+    if (typeof name !== 'string') {
+      throw new Error('Store name must be a string');
+    }
+
     this._listeners = new Map();
-    return {
-      ...this.state,
-      subscribe: this.subscribe.bind(this)
-    };
+    this.state = this._createProxy(initialState);
+
+    registry.register(name, this.state);
+
+    return this.state;
   }
 
   subscribe(path, callback) {
@@ -30,6 +65,11 @@ export class Store {
 
     const handler = {
       get: (target, prop) => {
+        // Handle subscribe method
+        if (prop === 'subscribe') {
+          return this.subscribe.bind(this);
+        }
+
         const value = target[prop];
 
         // Handle getters
@@ -105,3 +145,5 @@ export class Store {
     return path.split('.').reduce((obj, key) => obj[key], this.state);
   }
 }
+
+export { Store, registry as StoreRegistry };
