@@ -1,0 +1,24 @@
+{
+  "name": "miu",
+  "version": "0.0.0",
+  "author": "Ivan Mirić",
+  "description": "A lightweight UI library for the browser",
+  "main": "miu.js",
+  "type": "module",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [
+    "javascript",
+    "web-browser",
+    "ui"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^26.0.0",
+    "vitest": "^3.0.8"
+  }
+}
