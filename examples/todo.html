@@ -16,24 +16,21 @@
   <body>
     <h1>Todo List</h1>
 
-    <miu-el store="todo">
-      <input data-miu-bind="newTask" placeholder="New task...">
-      <button data-miu-on="click:addTask">Add</button>
+    <input data-miu-bind="todo.newTask" placeholder="New task...">
+    <button data-miu-on="click:todo.addTask">Add</button>
 
-      <ul data-miu-for="tasks">
-        <template>
-          <li>
-            <input type="checkbox" data-miu-bind="done">
-            <span data-miu-bind="text"></span>
-            <button data-miu-on="click:removeTask">×</button>
-          </li>
-        </template>
-      </ul>
-
-    </miu-el>
+    <ul data-miu-for="todo.tasks">
+      <template>
+        <li>
+          <input type="checkbox" data-miu-bind="@.done">
+          <span data-miu-bind="@.text"></span>
+          <button data-miu-on="click:todo.removeTask">×</button>
+        </li>
+      </template>
+    </ul>
 
     <script type="module">
-      import { Store } from '/src/miu.js';
+      import { Store, bind } from '/src/miu.js';
 
       const todoStore = new Store('todo', {
         tasks: [],
@@ -59,6 +56,8 @@
             todoStore.addTask();
           }
         });
+
+        bind(document.body, [todoStore]);
       });
     </script>
 

@@ -1,46 +1,30 @@
-class StoreRegistry {
-  constructor() {
-    this._stores = new Map();
-    this._storeCallbacks = new Map();
-  }
-
-  register(name, store) {
-    this._stores.set(name, store);
-    if (this._storeCallbacks.has(name)) {
-      this._storeCallbacks.get(name).forEach(callback => callback(store));
-      this._storeCallbacks.delete(name);
-    }
-  }
-
-  waitFor(name) {
-    return new Promise(resolve => {
-      const store = this._stores.get(name);
-      if (store) {
-        resolve(store);
-      } else {
-        if (!this._storeCallbacks.has(name)) {
-          this._storeCallbacks.set(name, new Set());
-        }
-        this._storeCallbacks.get(name).add(resolve);
-      }
-    });
-  }
-}
-
-const registry = new StoreRegistry();
-
 class Store {
   constructor(name, initialState = {}) {
     if (typeof name !== 'string') {
       throw new Error('Store name must be a string');
     }
 
+    this._name = name;
     this._listeners = new Map();
     this.state = this._createProxy(initialState);
 
-    registry.register(name, this.state);
+    // Expose some internal properties using a wrapper Proxy.
+    const wrapper = {
+      _get: this._getValueByPath.bind(this),
+      _set: this._setValueByPath.bind(this),
+      _name: this._name,
+      subscribe: this.subscribe.bind(this)
+    };
 
-    return this.state;
+    return new Proxy(wrapper, {
+      get: (target, prop) => {
+        return target[prop] ?? this.state[prop];
+      },
+      set: (_, prop, value) => {
+        this.state[prop] = value;
+        return true;
+      }
+    });
   }
 
   subscribe(path, callback) {
@@ -65,11 +49,6 @@ class Store {
 
     const handler = {
       get: (target, prop) => {
-        // Handle subscribe method
-        if (prop === 'subscribe') {
-          return this.subscribe.bind(this);
-        }
-
         const value = target[prop];
 
         // Handle getters
@@ -142,8 +121,24 @@ class Store {
   }
 
   _getValueByPath(path) {
-    return path.split('.').reduce((obj, key) => obj[key], this.state);
+    return path
+      .split(/[.\[]/)
+      .map(key => key.replace(']', ''))
+      .reduce((obj, key) => obj && obj[key], this.state);
+  }
+
+  _setValueByPath(path, value) {
+    const parts = path.split(/[.\[]/).map(key => key.replace(']', ''));
+    const lastKey = parts.pop();
+    const target = parts.reduce((obj, key) => obj && obj[key], this.state);
+
+    if (target) {
+      target[lastKey] = value;
+    }
   }
 }
 
-export { Store, registry as StoreRegistry };
+// Global map of store name to Store instance.
+const stores = new Map();
+
+export { Store, stores };

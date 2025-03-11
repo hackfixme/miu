@@ -1,21 +1,19 @@
 import { expect, describe, test } from 'vitest';
-import { Store } from './miu.js';
+import { Store, bind } from './miu.js';
 
 function randomString() {
   return Math.random().toString(36).substring(2, 10);
 }
 
-describe('Miu data binding', () => {
+describe('Data binding', () => {
   test('store updates element value', async () => {
-    const storeID = randomString();
-    const store = new Store(`test-${storeID}`, { value: 'before' });
+    const storeName = `test-${randomString()}`
+    const store = new Store(storeName, { value: 'before' });
 
     document.body.innerHTML = `
-      <miu-el store="test-${storeID}">
-        <input data-miu-bind="value">
-      </miu-el>
+      <input data-miu-bind="${storeName}.value">
     `;
-    await customElements.whenDefined('miu-el');
+    bind(document.body, [store]);
 
     const input = document.querySelector('input');
     expect(input.value).toBe('before');
@@ -24,15 +22,13 @@ describe('Miu data binding', () => {
   });
 
   test('element updates store value', async () => {
-    const storeID = randomString();
-    const store = new Store(`test-${storeID}`, { value: 'before' });
+    const storeName = `test-${randomString()}`
+    const store = new Store(storeName, { value: 'before' });
 
     document.body.innerHTML = `
-      <miu-el store="test-${storeID}">
-        <input data-miu-bind="value">
-      </miu-el>
+      <input data-miu-bind="${storeName}.value">
     `;
-    await customElements.whenDefined('miu-el');
+    bind(document.body, [store]);
 
     expect(store.value).toBe('before');
     const input = document.querySelector('input');
@@ -42,8 +38,8 @@ describe('Miu data binding', () => {
   });
 
   test('array elements are reactive', async () => {
-    const storeID = randomString();
-    const store = new Store(`test-${storeID}`, {
+    const storeName = `test-${randomString()}`
+    const store = new Store(storeName, {
       items: [
         { text: 'item1' },
         { text: 'item2' },
@@ -54,18 +50,16 @@ describe('Miu data binding', () => {
     });
 
     document.body.innerHTML = `
-      <miu-el store="test-${storeID}">
-        <ul data-miu-for="items">
-          <template>
-            <li>
-              <span data-miu-bind="text"></span>
-              <button data-miu-on="click:removeItem">×</button>
-            </li>
-          </template>
-        </ul>
-      </miu-el>
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li>
+            <span data-miu-bind="@.text"></span>
+            <button data-miu-on="click:${storeName}.removeItem">×</button>
+          </li>
+        </template>
+      </ul>
     `;
-    await customElements.whenDefined('miu-el');
+    bind(document.body, [store]);
 
     // Check initial render
     let items = document.querySelectorAll('li');
