@@ -56,19 +56,50 @@ class Store {
           return value.call(this.state);
         }
 
+        // Handle Symbol properties
+        if (typeof prop === 'symbol') {
+          return value;
+        }
+
         const newPath = path ? `${path}.${prop}` : prop;
+
+        // Handle Map methods
+        if (target instanceof Map && typeof value === 'function') {
+          return (...args) => {
+            const result = value.apply(target, args);
+
+            // Notify on Map mutations
+            if (['set', 'delete', 'clear'].includes(prop)) {
+              this._notifyListeners(path, target);
+              if (prop === 'set') {
+                // Notify for specific key changes
+                const [key] = args;
+                this._notifyListeners(`${path}[${key}]`, args[1]);
+              }
+            }
+
+            return result;
+          };
+        }
 
         // Handle array methods
         if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
           return (...args) => {
             const result = Array.prototype[prop].apply(target, args);
-
-            // Notify on array mutations
             if (['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(prop)) {
               this._notifyListeners(path, target);
             }
-
             return result;
+          };
+        }
+
+        // Handle Map/Object key access with brackets notation
+        if (target instanceof Map && prop === 'get') {
+          return (key) => {
+            const value = target.get(key);
+            return typeof value === 'object' && value !== null
+              ? this._createProxy(value, `${path}[${key}]`)
+              : value;
           };
         }
 
@@ -84,13 +115,12 @@ class Store {
         const newPath = path ? `${path}.${prop}` : prop;
         target[prop] = value;
 
-        // Special handling for array length changes
         if (Array.isArray(target) && prop === 'length') {
           this._notifyListeners(path, target);
         } else {
           this._notifyListeners(newPath, value);
-          // Also notify parent if it's an array element change
-          if (Array.isArray(target)) {
+          // Notify parent for array/object/map changes
+          if (Array.isArray(target) || target instanceof Map || typeof target === 'object') {
             this._notifyListeners(path, target);
           }
         }
