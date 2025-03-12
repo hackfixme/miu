@@ -227,6 +227,33 @@ function bindText(element, store, path, context) {
   });
 }
 
+const getIndexedIterator = (items, path) => {
+  if (items == null) {
+    throw new Error(`Value of ${path} is null or undefined`);
+  }
+  if (!Symbol.iterator in Object(items)) {
+    throw new Error(`Value of ${path} is not iterable`);
+  }
+  if (Array.isArray(items)) {
+    return items.entries();
+  }
+  if (items instanceof Map) {
+    return items.entries();
+  }
+  if (items instanceof Object) {
+    return Object.entries(items);
+  }
+  const type = Object.prototype.toString.call(items).slice(8, -1);
+  console.warn(`The type of ${path} is ${type}. Access by index might not be supported.`);
+
+  let index = 0;
+  return function* () {
+    for (const value of items) {
+      yield [index++, value];
+    }
+  }();
+};
+
 // Iterate over array items from the store at path, creating or removing elements
 // as needed. Bindings and event handlers are also created for child elements.
 // This attempts to render elements efficiently, by reusing ones that already exist.
@@ -241,23 +268,17 @@ function bindForEach(element, store, path) {
   const fullPath = `${store._name}.${path}`;
 
   const render = (items) => {
-    if (!Array.isArray(items)) {
-      throw new Error(`Value of "${fullPath}" is not an array`);
-    }
+    const iterator = getIndexedIterator(items, fullPath);
 
     // Set the context for this loop. This is used for binding child elements
     // and is passed to child event handlers.
     bindContexts.set(element, { store, path, items });
 
-    // Remove excess elements
-    while (element.children.length - 1 > items.length) {
-      element.lastElementChild.remove();
-    }
-
-    items.forEach((item, index) => {
+    let count = 0;
+    for (const [index] of iterator) {
       // TODO: Filter only elements managed by Miu, to allow other elements to
       // exist within the for-loop container.
-      const el = element.children[index+1]; // +1 to account for the template
+      const el = element.children[index + 1]; // +1 to account for the template
       if (!el) {
         // No element for this item, so create it.
         const clone = document.importNode(template.content, true);
@@ -273,7 +294,13 @@ function bindForEach(element, store, path) {
         el.setAttribute(MIU_ATTRS.INDEX, index);
         setupBindings(el);
       }
-    });
+      count++;
+    }
+
+    // Remove excess elements
+    while (element.childElementCount - 1 > count) {
+      element.lastElementChild.remove();
+    }
   };
 
   store.subscribe(path, render);
