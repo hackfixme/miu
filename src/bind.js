@@ -74,7 +74,6 @@ function parseBindAttr(el, attr) {
     // Inner loop notation
     const bindCtx = getBindContext(el);
     return resolveStoreRef(attr, attrVal, bindCtx);
-    // const path = `${ctx.path}[${ctx.index}].${path}`;
   }
 
   const [storeName, path] = attrVal.split('.', 2);
@@ -91,6 +90,7 @@ function parseBindAttr(el, attr) {
 }
 
 function resolveStoreRef(attr, ref, bindCtx) {
+  // TODO: Make sure that Symbol keys are supported.
   if (ref === KEY || ref === INDEX) {
     if (attr === ATTRS.FOR) {
       throw new Error(`${ref} is unsupported for ${ATTRS.FOR}`);
@@ -112,7 +112,7 @@ function resolveStoreRef(attr, ref, bindCtx) {
     };
   }
 
-  // throw new Error(`invalid `)
+  throw new Error(`Invalid store reference: ${ref}`);
 }
 
 function parseOnAttr(attr) {
@@ -191,26 +191,32 @@ function storeSubscribe(element, path, subFn) {
 
 // Bind an element to the store value at path.
 function bindElement(element, store, path, key) {
+  let value = null;
+  if (key) {
+    value = key;
+  } else {
+    value = store._get(path);
+    if (typeof value === 'function') {
+      const bindCtx = getBindContext(element);
+      value = value(bindCtx);
+    }
+  }
+
   if (element.tagName === 'INPUT') {
     if (element.type === 'checkbox') {
-      bindCheckbox(element, store, path);
+      bindCheckbox(element, store, path, value);
     } else {
-      bindInput(element, store, path, key);
+      bindInput(element, store, path, value);
     }
   } else {
-    bindText(element, store, path, key);
+    bindText(element, store, path, value);
   }
 }
 
 // Bind an input element to the store value at path.
-function bindInput(element, store, path, key) {
-  if (key) {
-    element.value = key;
-    return;
-  }
-  const newVal = store._get(path);
-  if (element.value !== newVal) {
-    element.value = newVal;
+function bindInput(element, store, path, value) {
+  if (element.value !== value) {
+    element.value = value;
   }
   addEventHandler(element, 'input', (e) => {
     store._set(path, e.target.value);
@@ -225,10 +231,13 @@ function bindInput(element, store, path, key) {
 }
 
 // Bind a checkbox element to the store value at path.
-function bindCheckbox(element, store, path) {
-  const newVal = store._get(path);
-  if (element.checked !== newVal) {
-    element.checked = newVal;
+function bindCheckbox(element, store, path, value) {
+  if (typeof value !== 'boolean') {
+    console.warn(`Ignoring non-boolean value "${value}" for checkbox element`);
+    return;
+  }
+  if (element.checked !== value) {
+    element.checked = value;
   }
   addEventHandler(element, 'change', (e) => {
     store._set(path, e.target.checked);
@@ -243,14 +252,9 @@ function bindCheckbox(element, store, path) {
 }
 
 // Bind any element's textContent to the store value at path.
-function bindText(element, store, path, key) {
-  if (key) {
-    element.textContent = key;
-    return;
-  }
-  const newVal = store._get(path);
-  if (element.textContent !== newVal) {
-    element.textContent = newVal;
+function bindText(element, store, path, value) {
+  if (element.textContent !== value) {
+    element.textContent = value;
   }
   storeSubscribe(element, path, () => {
     store.subscribe(path, (value) => {
@@ -298,6 +302,8 @@ function bindForEach(element, store, path) {
     // an array without filling a template.
     throw new Error(`${ATTRS.FOR} requires a template element`);
   }
+
+  // TODO: Warn if the template includes more than one element.
 
   const fullPath = `${store._name}.${path}`;
 
