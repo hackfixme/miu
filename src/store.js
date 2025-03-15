@@ -1,3 +1,5 @@
+import { deepCopy } from './util.js';
+
 class Store {
   constructor(name, initialState = {}) {
     if (typeof name !== 'string') {
@@ -61,7 +63,8 @@ class Store {
     return {
       $get: getValueByPath,
       $set: setValueByPath,
-      $subscribe: subscribe
+      $subscribe: subscribe,
+      get $data() { return deepCopy(state); }
     };
   }
 
