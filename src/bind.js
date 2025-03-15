@@ -138,7 +138,7 @@ function parseOnAttr(attr) {
   if (!store) {
     throw new Error(`Store not found: ${storeName}`);
   }
-  const fn = store._get(path);
+  const fn = store.$get(path);
   if (typeof fn !== 'function') {
     console.warn(`Function "${fullPath}" not found`);
   }
@@ -195,7 +195,7 @@ function bindElement(element, store, path, key) {
   if (key) {
     value = key;
   } else {
-    value = store._get(path);
+    value = store.$get(path);
     if (typeof value === 'function') {
       const bindCtx = getBindContext(element);
       value = value(bindCtx);
@@ -219,10 +219,10 @@ function bindInput(element, store, path, value) {
     element.value = value;
   }
   addEventHandler(element, 'input', (e) => {
-    store._set(path, e.target.value);
+    store.$set(path, e.target.value);
   });
   storeSubscribe(element, path, () => {
-    store.subscribe(path, (value) => {
+    store.$subscribe(path, (value) => {
       if (element.value !== value) {
         element.value = value;
       }
@@ -240,10 +240,10 @@ function bindCheckbox(element, store, path, value) {
     element.checked = value;
   }
   addEventHandler(element, 'change', (e) => {
-    store._set(path, e.target.checked);
+    store.$set(path, e.target.checked);
   });
   storeSubscribe(element, path, () => {
-    store.subscribe(path, (value) => {
+    store.$subscribe(path, (value) => {
       if (element.checked !== value) {
         element.checked = value;
       }
@@ -257,7 +257,7 @@ function bindText(element, store, path, value) {
     element.textContent = value;
   }
   storeSubscribe(element, path, () => {
-    store.subscribe(path, (value) => {
+    store.$subscribe(path, (value) => {
       if (element.textContent !== value) {
         element.textContent = value;
       }
@@ -305,7 +305,7 @@ function bindForEach(element, store, path) {
 
   // TODO: Warn if the template includes more than one element.
 
-  const fullPath = `${store._name}.${path}`;
+  const fullPath = `${store.$name}.${path}`;
 
   const render = (items) => {
     const iterator = getIndexedIterator(items, fullPath);
@@ -343,8 +343,8 @@ function bindForEach(element, store, path) {
     }
   };
 
-  store.subscribe(path, render);
-  render(store._get(path));
+  store.$subscribe(path, render);
+  render(store.$get(path));
 }
 
 // Bind an element and its children to the given stores. element can either be a
@@ -354,10 +354,10 @@ function bind(element, newStores) {
   if (!el) throw new Error('Element not found');
 
   for (const store of newStores) {
-    if (stores.has(store._name)) {
-      throw new Error(`Store with name "${store._name}" already exists`);
+    if (stores.has(store.$name)) {
+      throw new Error(`Store with name "${store.$name}" already exists`);
     }
-    stores.set(store._name, store);
+    stores.set(store.$name, store);
   }
 
   setupBindings(el);
