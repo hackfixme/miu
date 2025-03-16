@@ -220,6 +220,44 @@ describe('Store', () => {
 
         expect(changes).toEqual(['user']);
       });
+
+      test('notifies Map key subscribers when using Map.set', () => {
+        const store = createTestStore();
+        const changes = [];
+        store.$subscribe('userMap[u2]', (value) => changes.push(value));
+        store.userMap.set('u2', { role: 'guest' });
+        expect(changes).toEqual([{ role: 'guest' }]);
+      });
+
+      test('notifies Map subscribers when using Map.set', () => {
+        const store = createTestStore();
+        const changes = [];
+        store.$subscribe('userMap', (value) => changes.push(new Map(value)));
+        store.userMap.set('u2', { role: 'guest' });
+        expect(changes).toEqual([
+          new Map([
+            ['u1', { role: 'admin' }],
+            ['u2', { role: 'guest' }]
+          ])
+        ]);
+      });
+
+      test('handles nested Map operations', () => {
+        const store = new Store('test', {
+          mapOfMaps: new Map([
+            ['m1', new Map([['key', 'value']])]
+          ])
+        });
+
+        const changes = [];
+        store.$subscribe('mapOfMaps[m1][key]', (value) => changes.push(value));
+        store.mapOfMaps.get('m1').set('key', 'newValue');
+        expect(changes).toEqual(['newValue']);
+
+        store.$subscribe('mapOfMaps[m1]', (value) => changes.push(value));
+        store.mapOfMaps.delete('m1');
+        expect(changes).toEqual(['newValue', undefined]);
+      });
     });
   });
 

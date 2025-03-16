@@ -197,6 +197,16 @@ class Store {
         };
       }
 
+      // Special handling for Map.set to trigger notifications
+      if (prop === 'set') {
+        return (key, value) => {
+          target.set(key, value);
+          notifyListeners(`${path}[${key}]`, value);
+          notifyListeners(path, target);
+          return target;
+        };
+      }
+
       // For other built-in methods, bind them to the Map
       if (typeof target[prop] === 'function') {
         return target[prop].bind(target);
