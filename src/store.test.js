@@ -171,8 +171,10 @@ describe('Store', () => {
     });
 
     describe('$subscribe', () => {
+      let store;
+      beforeEach(() => { store = createTestStore(); });
+
       test('notifies subscribers of direct property changes', () => {
-        const store = createTestStore();
         const changes = [];
 
         store.$subscribe('user.name', (value) => changes.push(value));
@@ -182,7 +184,6 @@ describe('Store', () => {
       });
 
       test('notifies subscribers of nested property changes', () => {
-        const store = createTestStore();
         const changes = [];
 
         store.$subscribe('user.settings.theme', (value) => changes.push(value));
@@ -192,7 +193,6 @@ describe('Store', () => {
       });
 
       test('notifies subscribers of array element changes', () => {
-        const store = createTestStore();
         const changes = [];
 
         store.$subscribe('items[1]', (value) => changes.push(value));
@@ -202,7 +202,6 @@ describe('Store', () => {
       });
 
       test('notifies subscribers when array methods modify the array', () => {
-        const store = createTestStore();
         const changes = [];
 
         store.$subscribe('items', (value) => changes.push([...value]));
@@ -212,7 +211,6 @@ describe('Store', () => {
       });
 
       test('notifies subscribers of Map value changes', () => {
-        const store = createTestStore();
         const changes = [];
 
         store.$subscribe('userMap[u1].role', (value) => changes.push(value));
@@ -222,7 +220,6 @@ describe('Store', () => {
       });
 
       test('notifies Map key subscribers when using Map.set', () => {
-        const store = createTestStore();
         const changes = [];
         store.$subscribe('userMap[u2]', (value) => changes.push(value));
         store.userMap.set('u2', { role: 'guest' });
@@ -230,7 +227,6 @@ describe('Store', () => {
       });
 
       test('notifies Map subscribers when using Map.set', () => {
-        const store = createTestStore();
         const changes = [];
         store.$subscribe('userMap', (value) => changes.push(new Map(value)));
         store.userMap.set('u2', { role: 'guest' });
@@ -240,6 +236,32 @@ describe('Store', () => {
             ['u2', { role: 'guest' }]
           ])
         ]);
+      });
+
+      test('notifies when using Map.delete', () => {
+        const changes = [];
+        store.$subscribe('userMap[u1]', (value) => changes.push(value));
+        store.userMap.delete('u1');
+        expect(changes).toEqual([undefined]);
+      });
+
+      test('notifies parent path when using Map.delete', () => {
+        const changes = [];
+        store.$subscribe('userMap', (value) => changes.push(value));
+        store.userMap.delete('u1');
+        expect(changes).toEqual([new Map()]);
+      });
+
+      test('does not notify on Map.delete of non-existent key', () => {
+        const changes = [];
+        store.$subscribe('userMap[nonexistent]', (value) => changes.push(value));
+        store.userMap.delete('nonexistent');
+        expect(changes).toEqual([]);
+      });
+
+      test('Map.delete returns correct boolean result', () => {
+        expect(store.userMap.delete('u1')).toBe(true);
+        expect(store.userMap.delete('nonexistent')).toBe(false);
       });
 
       test('handles nested Map operations', () => {

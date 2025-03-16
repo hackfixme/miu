@@ -207,6 +207,18 @@ class Store {
         };
       }
 
+      if (prop === 'delete') {
+        return (key) => {
+          const hadKey = target.has(key);
+          const result = target.delete(key);
+          if (hadKey) {
+            notifyListeners(`${path}[${key}]`, undefined);
+            notifyListeners(path, target);
+          }
+          return result;
+        };
+      }
+
       // For other built-in methods, bind them to the Map
       if (typeof target[prop] === 'function') {
         return target[prop].bind(target);
