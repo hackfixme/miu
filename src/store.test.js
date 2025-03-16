@@ -264,6 +264,17 @@ describe('Store', () => {
         expect(store.userMap.delete('nonexistent')).toBe(false);
       });
 
+      test('notifies when using Map.clear', () => {
+        const store = createTestStore();
+        const mapChanges = [];
+        const entryChanges = [];
+        store.$subscribe('userMap', (value) => mapChanges.push(value));
+        store.$subscribe('userMap[u1]', (value) => entryChanges.push(value));
+        store.userMap.clear();
+        expect(mapChanges).toEqual([new Map()]);
+        expect(entryChanges).toEqual([undefined]);
+      });
+
       test('handles nested Map operations', () => {
         const store = new Store('test', {
           mapOfMaps: new Map([

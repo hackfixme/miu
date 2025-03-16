@@ -219,6 +219,20 @@ class Store {
         };
       }
 
+      if (prop === 'clear') {
+        return () => {
+          const keys = Array.from(target.keys());
+          target.clear();
+          // Notify all existing entry paths
+          keys.forEach(key => {
+            notifyListeners(`${path}[${key}]`, undefined);
+          });
+          // Notify the Map itself
+          notifyListeners(path, target);
+          return undefined;
+        };
+      }
+
       // For other built-in methods, bind them to the Map
       if (typeof target[prop] === 'function') {
         return target[prop].bind(target);
