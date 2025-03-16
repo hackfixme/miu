@@ -90,10 +90,16 @@ class Store {
       set: (obj, path, value) => {
         const parts = path.split(/[.\[]/).map(key => key.replace(']', ''));
         const lastKey = parts.pop();
-        const target = parts.reduce((curr, key) => curr && curr[key], obj);
-        if (target) {
-          target[lastKey] = value;
-        }
+
+        // Create intermediate objects if they don't exist while traversing the path
+        const target = parts.reduce((curr, key) => {
+          if (!curr[key]) {
+            curr[key] = {};
+          }
+          return curr[key];
+        }, obj);
+
+        target[lastKey] = value;
       }
     };
   }
