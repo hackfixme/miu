@@ -143,6 +143,11 @@ class Store {
    */
   _createState(initialState, listeners, pathOps) {
     const notifyListeners = (path, value) => {
+      // Notify root subscribers
+      if (listeners.has('')) {
+        listeners.get('').forEach(callback => callback(initialState));
+      }
+
       // Notify exact path matches
       if (listeners.has(path)) {
         listeners.get(path).forEach(callback => callback(value));
