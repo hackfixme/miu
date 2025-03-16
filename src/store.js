@@ -212,6 +212,14 @@ class Store {
       },
 
       set: (target, prop, value) => {
+        // Validate array indices
+        if (Array.isArray(target)) {
+          const index = parseInt(prop, 10);
+          if (isNaN(index) || index < 0 || index > target.length-1) {
+            throw new Error(`Invalid array index: ${prop}`);
+          }
+        }
+
         const newPath = path ? `${path}.${prop}` : prop;
         target[prop] = value;
 

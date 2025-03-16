@@ -119,6 +119,9 @@ describe('Store', () => {
       test('retrieves array values using index notation', () => {
         expect(store.$get('items[0]')).toBe('a');
         expect(store.$get('items[2]')).toBe('c');
+        // Negative and out of bounds indices behave as expected
+        expect(store.$get('items[-1]')).toBeUndefined();
+        expect(store.$get('items[3]')).toBeUndefined();
       });
 
       test('retrieves Map values using key or property notation', () => {
@@ -162,7 +165,8 @@ describe('Store', () => {
       });
 
       test('throws error for invalid array indices', () => {
-        expect(() => store.$set('items[-1]', 'x')).toThrow();
+        expect(() => store.$set('items[-1]', 'x')).toThrow('Invalid array index: -1');
+        expect(() => store.$set('items[3]', 'x')).toThrow('Invalid array index: 3');
       });
     });
   });
