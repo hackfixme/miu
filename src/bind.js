@@ -1,11 +1,16 @@
 import { stores } from './store.js';
 
-const MIU_ATTRS = {
+const ATTRS = {
   BIND:  'data-miu-bind',
   FOR:   'data-miu-for',
   INDEX: 'data-miu-index',
   ON:    'data-miu-on',
 };
+
+const SEL = '@';
+const KEY = `${SEL}key`;
+const VALUE = `${SEL}value`;
+const INDEX = `${SEL}index`;
 
 // Mapping of parent for-loop element to items rendered in the loop.
 // Used to pass the correct element index to child event handlers.
@@ -23,15 +28,15 @@ const storeSubs = new WeakMap();
 // TODO: Extract DOM updating.
 function setupBindings(root) {
   // Setup for loops first as they create new elements.
-  for (const el of root.querySelectorAll(`[${MIU_ATTRS.FOR}]`)) {
-    const attr = parseAttr(el.getAttribute(MIU_ATTRS.FOR));
-    bindForEach(el, attr.store, attr.path);
+  for (const el of root.querySelectorAll(`[${ATTRS.FOR}]`)) {
+    const {store, path} = parseBindAttr(el, ATTRS.FOR);
+    bindForEach(el, store, path);
   };
 
   // Setup all other bindings.
-  for (const el of root.querySelectorAll(`[${MIU_ATTRS.BIND}]`)) {
-    const attr = parseAttr(el.getAttribute(MIU_ATTRS.BIND));
-    bindElement(el, attr.store, attr.path);
+  for (const el of root.querySelectorAll(`[${ATTRS.BIND}]`)) {
+    const {store, path, key} = parseBindAttr(el, ATTRS.BIND);
+    bindElement(el, store, path, key);
   };
 }
 
@@ -39,9 +44,9 @@ function setupBindings(root) {
 // item, the item index within the array, the store associated with the parent
 // for element, and the store path to the items.
 function getBindContext(element) {
-  const forParent = element.closest(`[${MIU_ATTRS.FOR}]`);
+  const forParent = element.parentElement.closest(`[${ATTRS.FOR}]`);
   const parentCtx = bindContexts.get(forParent);
-  const idx = element.closest(`[${MIU_ATTRS.INDEX}]`)?.getAttribute(MIU_ATTRS.INDEX);
+  const idx = element.closest(`[${ATTRS.INDEX}]`)?.getAttribute(ATTRS.INDEX);
 
   let context = {};
   if (parentCtx?.store && idx) {
@@ -56,44 +61,25 @@ function getBindContext(element) {
   return context;
 }
 
-// Parse an element attribute. It is expected to be in one of these formats:
-// - "<event>:<function name>" for event handling,
-// - "<store name>.<store path>" for data binding,
-// - "@.<store path>" for elements within a for loop. The @ refers to the item
-//   in the current iteration.
-//
-// It returns an object with `eventName`, `store` and `path` properties. Only `path`
-// is guaranteed to be defined.
-// TODO: Handle @index.
-function parseAttr(attr) {
-  const parts = attr.split(':');
-  if (parts.length > 2) {
-    throw new Error(`Invalid attribute format: ${attr}`);
+// Parse a bind or for element attribute. It is expected to be in one of these formats:
+// - "<store name>.<store path>" for data binding.
+// - "@[.<store path>]" for referencing array elements within a for loop.
+// - "@key" for referencing object keys within a for loop.
+// - "@value[.<store path>]" for referencing object values within a for loop.
+// - "@index" for referencing the index within a for loop.
+function parseBindAttr(el, attr) {
+  const attrVal = el.getAttribute(attr);
+
+  if (attrVal.charAt(0) === SEL) {
+    // Inner loop notation
+    const bindCtx = getBindContext(el);
+    return resolveStoreRef(attr, attrVal, bindCtx);
+    // const path = `${ctx.path}[${ctx.index}].${path}`;
   }
 
-  if (parts.length === 1) {
-    return parseStorePath(attr);
-  }
-
-  const [eventName, storePath] = parts;
-  if (!eventName) {
-    throw new Error(`Invalid event name in: ${attr}`);
-  }
-
-  return { eventName, ...parseStorePath(storePath) };
-}
-
-// Parse a store path in the format "<store name>.<store path>". If the store
-// exists, returns the store instance and path without the store name.
-function parseStorePath(storePath) {
-  const [storeName, ...pathParts] = storePath.split('.');
-  if (!storeName || pathParts.length === 0) {
+  const [storeName, path] = attrVal.split('.', 2);
+  if (!storeName || !path) {
     throw new Error(`Invalid path format: ${storePath}`);
-  }
-
-  if (storeName === '@') {
-    // Inner loop notation. Will be resolved externally.
-    return { path: pathParts.join('.') };
   }
 
   const store = stores.get(storeName);
@@ -101,30 +87,77 @@ function parseStorePath(storePath) {
     throw new Error(`Store not found: ${storeName}`);
   }
 
-  return { store, path: pathParts.join('.') };
+  return { store, path };
 }
+
+function resolveStoreRef(attr, ref, bindCtx) {
+  if (ref === KEY || ref === INDEX) {
+    if (attr === ATTRS.FOR) {
+      throw new Error(`${ref} is unsupported for ${ATTRS.FOR}`);
+    }
+    return { store: bindCtx.store, key: bindCtx.index };
+  }
+
+  if (ref.startsWith(`${SEL}.`)) {
+    return {
+      store: bindCtx.store,
+      path: `${bindCtx.path}[${bindCtx.index}]${ref.slice(1)}`,
+    };
+  }
+
+  if (ref.startsWith(VALUE)) {
+    return {
+      store: bindCtx.store,
+      path: `${bindCtx.path}[${bindCtx.index}]${ref.slice(6)}`,
+    };
+  }
+
+  // throw new Error(`invalid `)
+}
+
+function parseOnAttr(attr) {
+  const parts = attr.split(':');
+  if (!attr || parts.length > 2) {
+    throw new Error(`Invalid attribute format: ${attr}`);
+  }
+
+  const [eventName, fnRef] = parts;
+  if (!eventName || !fnRef) {
+    throw new Error(`Invalid event name in: ${attr}`);
+  }
+
+  if (globalThis[fnRef]) {
+    if (typeof globalThis[fnRef] !== 'function') {
+      throw new Error(`${fnRef} is not a function`);
+    }
+    return { eventName, fn: globalThis[fnRef]};
+  }
+
+  const [storeName, path] = fnRef.split('.', 2);
+  const store = stores.get(storeName);
+  if (!store) {
+    throw new Error(`Store not found: ${storeName}`);
+  }
+  const fn = store._get(path);
+  if (typeof fn !== 'function') {
+    console.warn(`Function "${fullPath}" not found`);
+  }
+
+  return { eventName, fn };
+}
+
 
 // Attach event handlers to child elements of root. The handler method name is
 // retrieved from the `data-miu-on` attribute and is expected to exist on the store.
 function setupEventHandlers(root) {
-  for (const el of root.querySelectorAll(`[${MIU_ATTRS.ON}]`)) {
-    const attr = el.getAttribute(MIU_ATTRS.ON);
-    const { eventName, store, path } = parseAttr(attr);
-    const fullPath = `${store._name}.${path}`;
-
-    if (!eventName || !path) {
-      throw new (`Invalid event binding: "${attr}"`);
-    }
-
-    const fn = store._get(path);
-    if (typeof fn !== 'function') {
-      console.warn(`Function "${fullPath}" not found`);
-    }
+  for (const el of root.querySelectorAll(`[${ATTRS.ON}]`)) {
+    const attr = el.getAttribute(ATTRS.ON);
+    const { eventName, fn } = parseOnAttr(attr);
 
     addEventHandler(el, eventName, (event) => {
       event.preventDefault();
-      const context = getBindContext(el);
-      fn.call(store, event, context);
+      const bindCtx = getBindContext(el);
+      fn.call(bindCtx.store, event, bindCtx);
     });
   }
 }
@@ -157,27 +190,24 @@ function storeSubscribe(element, path, subFn) {
 }
 
 // Bind an element to the store value at path.
-function bindElement(element, store, path) {
-  if (!store) {
-    // This element might be inside a loop. Try getting its parent context.
-    const ctx = getBindContext(element);
-    store = ctx.store;
-    path = `${ctx.path}[${ctx.index}].${path}`;
-  }
-
+function bindElement(element, store, path, key) {
   if (element.tagName === 'INPUT') {
     if (element.type === 'checkbox') {
       bindCheckbox(element, store, path);
     } else {
-      bindInput(element, store, path);
+      bindInput(element, store, path, key);
     }
   } else {
-    bindText(element, store, path);
+    bindText(element, store, path, key);
   }
 }
 
 // Bind an input element to the store value at path.
-function bindInput(element, store, path) {
+function bindInput(element, store, path, key) {
+  if (key) {
+    element.value = key;
+    return;
+  }
   const newVal = store._get(path);
   if (element.value !== newVal) {
     element.value = newVal;
@@ -213,7 +243,11 @@ function bindCheckbox(element, store, path) {
 }
 
 // Bind any element's textContent to the store value at path.
-function bindText(element, store, path, context) {
+function bindText(element, store, path, key) {
+  if (key) {
+    element.textContent = key;
+    return;
+  }
   const newVal = store._get(path);
   if (element.textContent !== newVal) {
     element.textContent = newVal;
@@ -262,7 +296,7 @@ function bindForEach(element, store, path) {
   if (!(template instanceof HTMLTemplateElement)) {
     // TODO: Maybe loosen this restriction? It should be possible to loop over
     // an array without filling a template.
-    throw new Error(`${MIU_ATTRS.FOR} requires a template element`);
+    throw new Error(`${ATTRS.FOR} requires a template element`);
   }
 
   const fullPath = `${store._name}.${path}`;
@@ -286,12 +320,12 @@ function bindForEach(element, store, path) {
         const child = element.lastElementChild;
         // Set the index of this item so that it can be passed to all child
         // event handlers.
-        child.setAttribute(MIU_ATTRS.INDEX, index);
+        child.setAttribute(ATTRS.INDEX, index);
         setupBindings(child);
         setupEventHandlers(child);
       } else {
         // The element exists, so just update its index and bindings.
-        el.setAttribute(MIU_ATTRS.INDEX, index);
+        el.setAttribute(ATTRS.INDEX, index);
         setupBindings(el);
       }
       count++;
