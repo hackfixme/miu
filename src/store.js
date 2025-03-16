@@ -160,7 +160,7 @@ class Store {
       }
     };
 
-    const handleArray = (target, prop, path) => {
+    const handleArrayMethods = (target, prop, path) => {
       return (...args) => {
         const result = Array.prototype[prop].apply(target, args);
         if (['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(prop)) {
@@ -168,6 +168,22 @@ class Store {
         }
         return result;
       };
+    };
+
+    const handleArraySet = (target, prop, value, path) => {
+      const index = parseInt(prop, 10);
+      if (isNaN(index) || index < 0 || index > target.length-1) {
+        throw new Error(`Invalid array index: ${prop}`);
+      }
+
+      target[prop] = value;
+      const newPath = `${path}[${prop}]`;
+
+      // Notify both the specific element and the array itself
+      notifyListeners(newPath, value);
+      notifyListeners(path, target);
+
+      return true;
     };
 
     const handleMap = (target, prop, path) => {
@@ -199,7 +215,7 @@ class Store {
         }
 
         if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
-          return handleArray(target, prop, path);
+          return handleArrayMethods(target, prop, path);
         }
 
         const newPath = path ? `${path}.${prop}` : prop;
@@ -212,25 +228,17 @@ class Store {
       },
 
       set: (target, prop, value) => {
-        // Validate array indices
         if (Array.isArray(target)) {
-          const index = parseInt(prop, 10);
-          if (isNaN(index) || index < 0 || index > target.length-1) {
-            throw new Error(`Invalid array index: ${prop}`);
-          }
+          return handleArraySet(target, prop, value, path);
         }
 
         const newPath = path ? `${path}.${prop}` : prop;
         target[prop] = value;
+        notifyListeners(newPath, value);
 
-        if (Array.isArray(target) && prop === 'length') {
+        // Notify parent for object/map changes
+        if (target instanceof Map || typeof target === 'object') {
           notifyListeners(path, target);
-        } else {
-          notifyListeners(newPath, value);
-          // Notify parent for array/object/map changes
-          if (Array.isArray(target) || target instanceof Map || typeof target === 'object') {
-            notifyListeners(path, target);
-          }
         }
 
         return true;

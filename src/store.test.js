@@ -190,6 +190,26 @@ describe('Store', () => {
 
         expect(changes).toEqual(['dark']);
       });
+
+      test('notifies subscribers of array element changes', () => {
+        const store = createTestStore();
+        const changes = [];
+
+        store.$subscribe('items[1]', (value) => changes.push(value));
+        store.items[1] = 'x';
+
+        expect(changes).toEqual(['x']);
+      });
+
+      test('notifies subscribers when array methods modify the array', () => {
+        const store = createTestStore();
+        const changes = [];
+
+        store.$subscribe('items', (value) => changes.push([...value]));
+        store.items.push('d');
+
+        expect(changes).toEqual([['a', 'b', 'c', 'd']]);
+      });
     });
   });
 
