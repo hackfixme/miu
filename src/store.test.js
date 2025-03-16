@@ -66,10 +66,10 @@ describe('Store', () => {
     test('prevents modification of API properties', () => {
       const store = new Store('protectedStore');
 
-      expect(() => { store.$name = 'newName'; }).toThrow();
+      expect(() => { store.$name = 'newName'; }).toThrow("'$name' is read-only");
       expect(store.$name).toBe('protectedStore');
 
-      expect(() => { store.$get = () => {} }).toThrow();
+      expect(() => { store.$get = () => {} }).toThrow("'$get' is read-only");
       expect(typeof store.$get).toBe('function');
     });
 

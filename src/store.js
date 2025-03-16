@@ -63,7 +63,7 @@ class Store {
       },
       set: (_, prop, value) => {
         if (prop.toString().startsWith('$')) {
-          return false;
+          throw new Error(`'${prop}' is read-only`);
         }
         state[prop] = value;
         return true;
