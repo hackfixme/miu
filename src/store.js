@@ -1,6 +1,48 @@
 import { deepCopy } from './util.js';
 
+/**
+ * A reactive state management store that supports nested objects, arrays, and Maps
+ * with JSONPath-inspired path access and subscription capabilities.
+ *
+ * @class Store
+ *
+ * @property {string} $name - Store identifier
+ * @property {function(string): any} $get - Get value at specified path using JSONPath-like syntax
+ * @property {function(string, any): void} $set - Set value at specified path using JSONPath-like syntax
+ * @property {function(string, function): function} $subscribe - Subscribe to changes at path
+ *     Returns an unsubscribe function that can be called to stop listening for changes
+ * @property {Object} $data - Deep copy of current state
+ *
+ * Path notation supports:
+ * - Dot notation: 'user.name'
+ * - Array/Map indexing: 'users[0]' or 'userMap[userId]'
+ *
+ * @example
+ * const store = new Store('userStore', { user: { name: 'John' } });
+ *
+ * // Direct property access
+ * store.user.name; // 'John'
+ *
+ * // Path-based access
+ * store.$get('user.name'); // 'John'
+ * store.$set('settings.theme', 'dark');
+ *
+ * // Subscriptions
+ * const unsubscribe = store.$subscribe('user.name', (value) => console.log(value));
+ * store.user.name = 'Jane'; // triggers subscriber
+ *
+ * // Get raw data copy
+ * store.$data; // { user: { name: 'Jane'} }
+ */
 class Store {
+  /**
+   * Creates a new Store instance
+   * @constructor
+   * @param {string} name - Unique identifier for the store
+   * @param {Object} [initialState={}] - Initial state object
+   * @throws {Error} If name is not a string
+   * @returns {Proxy} Proxied store instance with reactive capabilities
+   */
   constructor(name, initialState = {}) {
     if (typeof name !== 'string') {
       throw new Error('Store name must be a string');
@@ -29,6 +71,14 @@ class Store {
     });
   }
 
+  /**
+   * Creates path operation utilities for getting and setting nested values using JSONPath-like syntax
+   * @private
+   * @returns {{
+   *   get: (obj: Object, path: string) => any,
+   *   set: (obj: Object, path: string, value: any) => void
+   * }}
+   */
   _createPathOps() {
     return {
       get: (obj, path) => {
@@ -48,6 +98,14 @@ class Store {
     };
   }
 
+  /**
+   * Creates the public API methods for the store
+   * @private
+   * @param {Object} state - Store state object
+   * @param {Map} listeners - Map of path-based subscribers
+   * @param {Object} pathOps - Path operation utilities
+   * @returns {Object} Store API methods
+   */
   _createAPI(state, listeners, pathOps) {
     return {
       $get: (path) => pathOps.get(state, path),
@@ -69,6 +127,14 @@ class Store {
     };
   }
 
+  /**
+   * Creates a reactive state object with proxy-based tracking
+   * @private
+   * @param {Object} initialState - Initial state object
+   * @param {Map} listeners - Map of path-based subscribers
+   * @param {Object} pathOps - Path operation utilities
+   * @returns {Proxy} Proxied state object
+   */
   _createState(initialState, listeners, pathOps) {
     const notifyListeners = (path, value) => {
       // Notify exact path matches
