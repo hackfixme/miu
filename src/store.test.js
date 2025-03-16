@@ -2,6 +2,17 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { Store } from './store.js';
 
 describe('Store', () => {
+  const createTestStore = () => new Store('testStore', {
+    user: {
+      name: 'John',
+      settings: {
+        theme: 'light'
+      }
+    },
+    items: ['a', 'b', 'c'],
+    userMap: new Map([['u1', { role: 'admin' }]])
+  });
+
   describe('constructor', () => {
     test('creates store with initial state', () => {
       const store = new Store('testStore', { count: 0 });
@@ -43,17 +54,6 @@ describe('Store', () => {
   });
 
   describe('api', () => {
-    const createTestStore = () => new Store('testStore', {
-      user: {
-        name: 'John',
-        settings: {
-          theme: 'light'
-        }
-      },
-      items: ['a', 'b', 'c'],
-      userMap: new Map([['u1', { role: 'admin' }]])
-    });
-
     test('exposes internal methods and properties via proxy wrapper', () => {
       const store = new Store('apiStore');
 
@@ -121,8 +121,9 @@ describe('Store', () => {
         expect(store.$get('items[2]')).toBe('c');
       });
 
-      test('retrieves Map values using key notation', () => {
+      test('retrieves Map values using key or property notation', () => {
         expect(store.$get('userMap[u1].role')).toBe('admin');
+        expect(store.$get('userMap.u1.role')).toBe('admin');
       });
 
       test('returns undefined for non-existent paths', () => {
@@ -148,9 +149,11 @@ describe('Store', () => {
         expect(store.items[1]).toBe('x');
       });
 
-      test('sets Map values using key notation', () => {
+      test('sets Map values using key or property notation', () => {
         store.$set('userMap[u1].role', 'user');
         expect(store.userMap.get('u1').role).toBe('user');
+        store.$set('userMap.u1.role', 'user2');
+        expect(store.userMap.get('u1').role).toBe('user2');
       });
 
       test('creates intermediate objects for non-existent paths', () => {
@@ -217,6 +220,23 @@ describe('Store', () => {
       delete store.user.age;
       expect(store.user.age).toBeUndefined();
       expect('age' in store.user).toBe(false);
+    });
+
+    test('Map access', () => {
+      const store = createTestStore();
+      expect(store.userMap.u1.role).toBe('admin');
+      expect(store.userMap['u1'].role).toBe('admin');
+      expect(store.userMap.get('u1').role).toBe('admin');
+
+      store.userMap.get('u1').role = 'user';
+      expect(store.userMap.u1.role).toBe('user');
+      store.userMap.u1.role = 'user2';
+      expect(store.userMap.u1.role).toBe('user2');
+
+      store.userMap.set('u1', { role: 'user3' });
+      expect(store.userMap.u1.role).toBe('user3');
+      store.userMap = new Map([['u1', { role: 'user4' }]]);
+      expect(store.userMap.u1.role).toBe('user4');
     });
   });
 });

@@ -154,25 +154,7 @@ class Store {
       }
     };
 
-    const handleMapMethods = (target, value, path, prop) => {
-      return (...args) => {
-        const result = value.apply(target, args);
-
-        // Notify on Map mutations
-        if (['set', 'delete', 'clear'].includes(prop)) {
-          notifyListeners(path, target);
-          if (prop === 'set') {
-            // Notify for specific key changes
-            const [key] = args;
-            notifyListeners(`${path}[${key}]`, args[1]);
-          }
-        }
-
-        return result;
-      };
-    };
-
-    const handleArrayMethods = (target, prop, path) => {
+    const handleArray = (target, prop, path) => {
       return (...args) => {
         const result = Array.prototype[prop].apply(target, args);
         if (['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(prop)) {
@@ -182,43 +164,39 @@ class Store {
       };
     };
 
-    const handleMapGet = (target, path) => {
-      return (key) => {
-        const value = target.get(key);
-        return typeof value === 'object' && value !== null
-          ? createProxy(value, `${path}[${key}]`)
-          : value;
-      };
+    const handleMap = (target, prop, path) => {
+      // For built-in methods, bind them to the Map
+      if (typeof target[prop] === 'function') {
+        return target[prop].bind(target);
+      }
+      // Treat all other properties as Map.get()
+      const value = target.get(prop);
+      return typeof value === 'object' && value !== null
+        ? createProxy(value, `${path}[${prop}]`)
+        : value;
     };
 
     const createProxyHandler = (path) => ({
       get: (target, prop) => {
         const value = target[prop];
 
-        // Handle getters
         if (typeof value === 'function' && value.constructor.name === 'get') {
           return value.call(target);
         }
 
-        // Handle Symbol properties
         if (typeof prop === 'symbol') {
           return value;
         }
 
-        const newPath = path ? `${path}.${prop}` : prop;
-
-        // Handle Map methods
-        if (target instanceof Map && typeof value === 'function') {
-          return prop === 'get'
-            ? handleMapGet(target, path)
-            : handleMapMethods(target, value, path, prop);
+        if (target instanceof Map) {
+          return handleMap(target, prop, path);
         }
 
-        // Handle array methods
         if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
-          return handleArrayMethods(target, prop, path);
+          return handleArray(target, prop, path);
         }
 
+        const newPath = path ? `${path}.${prop}` : prop;
         // Recursively create proxies for nested objects
         if (typeof value === 'object' && value !== null) {
           return createProxy(value, newPath);
