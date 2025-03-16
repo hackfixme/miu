@@ -308,6 +308,27 @@ describe('Store', () => {
         expect(changes).toEqual(['value', 'updated']);
       });
 
+      test('notifies with undefined when path is deleted', () => {
+        const changes = [];
+        store.$subscribe('user.settings', value => changes.push(value));
+        delete store.user.settings;
+        expect(changes).toEqual([undefined]);
+      });
+
+      test('notifies child paths with undefined when parent is deleted', () => {
+        const changes = [];
+        store.$subscribe('user.settings.theme', value => changes.push(value));
+        delete store.user.settings;
+        expect(changes).toEqual([undefined]);
+      });
+
+      test('notifies parent paths with new state when child is deleted', () => {
+        const changes = [];
+        store.$subscribe('user', value => changes.push(value));
+        delete store.user.settings;
+        expect(changes).toEqual([{ name: 'John' }]);
+      });
+
       test('parent path subscribers receive updates for nested changes', () => {
         const userChanges = [];
         const nameChanges = [];

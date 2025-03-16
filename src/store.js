@@ -295,6 +295,18 @@ class Store {
         }
 
         return true;
+      },
+
+      deleteProperty: (target, prop) => {
+        const exists = prop in target;
+        const deleted = delete target[prop];
+
+        if (exists && deleted) {
+          const newPath = path ? `${path}.${prop}` : prop;
+          notifyListeners(newPath, undefined);
+        }
+
+        return deleted;
       }
     });
 
