@@ -187,28 +187,25 @@ class Store {
     };
 
     const handleMap = (target, prop, path) => {
-      // Special handling for Map.get to maintain reactivity
-      if (prop === 'get') {
-        return (key) => {
+      const mapOperations = {
+        // Maintain reactivity for Map.get
+        get: (key) => {
           const value = target.get(key);
           return typeof value === 'object' && value !== null
             ? createProxy(value, `${path}[${key}]`)
             : value;
-        };
-      }
+        },
 
-      // Special handling for Map.set to trigger notifications
-      if (prop === 'set') {
-        return (key, value) => {
+        // Trigger notifications on Map.set
+        set: (key, value) => {
           target.set(key, value);
           notifyListeners(`${path}[${key}]`, value);
           notifyListeners(path, target);
           return target;
-        };
-      }
+        },
 
-      if (prop === 'delete') {
-        return (key) => {
+        // Trigger notifications on Map.delete
+        delete: (key) => {
           const hadKey = target.has(key);
           const result = target.delete(key);
           if (hadKey) {
@@ -216,21 +213,22 @@ class Store {
             notifyListeners(path, target);
           }
           return result;
-        };
-      }
+        },
 
-      if (prop === 'clear') {
-        return () => {
+        // Trigger notifications on Map.clear
+        clear: () => {
           const keys = Array.from(target.keys());
           target.clear();
           // Notify all existing entry paths
-          keys.forEach(key => {
-            notifyListeners(`${path}[${key}]`, undefined);
-          });
+          keys.forEach(key => notifyListeners(`${path}[${key}]`, undefined));
           // Notify the Map itself
           notifyListeners(path, target);
           return undefined;
-        };
+        }
+      };
+
+      if (prop in mapOperations) {
+        return mapOperations[prop];
       }
 
       // For other built-in methods, bind them to the Map
