@@ -42,6 +42,61 @@ describe('Store', () => {
     });
   });
 
+  describe('api', () => {
+    test('exposes internal methods and properties via proxy wrapper', () => {
+      const store = new Store('apiStore');
+
+      expect(store.$name).toBe('apiStore');
+      expect(typeof store.$get).toBe('function');
+      expect(typeof store.$set).toBe('function');
+      expect(typeof store.$subscribe).toBe('function');
+    });
+
+    test('prevents modification of API properties', () => {
+      const store = new Store('protectedStore');
+
+      expect(() => { store.$name = 'newName'; }).toThrow();
+      expect(store.$name).toBe('protectedStore');
+
+      expect(() => { store.$get = () => {} }).toThrow();
+      expect(typeof store.$get).toBe('function');
+    });
+
+    describe('$data', () => {
+      test('is empty when no initial state provided', () => {
+        const store = new Store('emptyStore');
+        expect(store.$data).toEqual({});
+      });
+
+      test('preserves data structure but removes functions', () => {
+        const initialState = {
+          nested: {
+            foo: 'bar',
+            fn: () => false
+          },
+          array: [1, 2, () => true, undefined, null],
+          topFn: function() { return false }
+        };
+
+        const store = new Store('complexStore', initialState);
+        const data = store.$data;
+
+        // Functions are removed from objects but preserved as undefined in arrays
+        // to preserve array length and indices.
+        expect(data).toEqual({
+          nested: {
+            foo: 'bar'
+          },
+          array: [1, 2, undefined, undefined, null]
+        });
+
+        // Check that functions are completely removed, not just undefined.
+        expect(data.nested.hasOwnProperty('fn')).toBe(false);
+        expect(data.hasOwnProperty('topFn')).toBe(false);
+      });
+    });
+  });
+
   describe('state', () => {
     test('direct property access and modification', () => {
       const store = new Store('basicStore', { count: 0 });
