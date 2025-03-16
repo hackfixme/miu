@@ -210,6 +210,16 @@ describe('Store', () => {
 
         expect(changes).toEqual([['a', 'b', 'c', 'd']]);
       });
+
+      test('notifies subscribers of Map value changes', () => {
+        const store = createTestStore();
+        const changes = [];
+
+        store.$subscribe('userMap[u1].role', (value) => changes.push(value));
+        store.userMap.get('u1').role = 'user';
+
+        expect(changes).toEqual(['user']);
+      });
     });
   });
 

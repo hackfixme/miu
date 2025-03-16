@@ -187,15 +187,23 @@ class Store {
     };
 
     const handleMap = (target, prop, path) => {
-      // For built-in methods, bind them to the Map
+      // Special handling for Map.get to maintain reactivity
+      if (prop === 'get') {
+        return (key) => {
+          const value = target.get(key);
+          return typeof value === 'object' && value !== null
+            ? createProxy(value, `${path}[${key}]`)
+            : value;
+        };
+      }
+
+      // For other built-in methods, bind them to the Map
       if (typeof target[prop] === 'function') {
         return target[prop].bind(target);
       }
-      // Treat all other properties as Map.get()
-      const value = target.get(prop);
-      return typeof value === 'object' && value !== null
-        ? createProxy(value, `${path}[${prop}]`)
-        : value;
+
+      // Direct property access on Map becomes Map.get()
+      return target.get(prop);
     };
 
     const createProxyHandler = (path) => ({
