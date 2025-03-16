@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeEach } from 'vitest';
 import { Store } from './store.js';
 
 describe('Store', () => {
@@ -43,6 +43,17 @@ describe('Store', () => {
   });
 
   describe('api', () => {
+    const createTestStore = () => new Store('testStore', {
+      user: {
+        name: 'John',
+        settings: {
+          theme: 'light'
+        }
+      },
+      items: ['a', 'b', 'c'],
+      userMap: new Map([['u1', { role: 'admin' }]])
+    });
+
     test('exposes internal methods and properties via proxy wrapper', () => {
       const store = new Store('apiStore');
 
@@ -93,6 +104,62 @@ describe('Store', () => {
         // Check that functions are completely removed, not just undefined.
         expect(data.nested.hasOwnProperty('fn')).toBe(false);
         expect(data.hasOwnProperty('topFn')).toBe(false);
+      });
+    });
+
+    describe('$get', () => {
+      let store;
+      beforeEach(() => { store = createTestStore(); });
+
+      test('retrieves nested object values using dot notation', () => {
+        expect(store.$get('user.name')).toBe('John');
+        expect(store.$get('user.settings.theme')).toBe('light');
+      });
+
+      test('retrieves array values using index notation', () => {
+        expect(store.$get('items[0]')).toBe('a');
+        expect(store.$get('items[2]')).toBe('c');
+      });
+
+      test('retrieves Map values using key notation', () => {
+        expect(store.$get('userMap[u1].role')).toBe('admin');
+      });
+
+      test('returns undefined for non-existent paths', () => {
+        expect(store.$get('user.nonexistent')).toBeUndefined();
+        expect(store.$get('items[99]')).toBeUndefined();
+      });
+    });
+
+    describe('$set', () => {
+      let store;
+      beforeEach(() => { store = createTestStore(); });
+
+      test('sets nested object values using dot notation', () => {
+        store.$set('user.name', 'Jane');
+        expect(store.user.name).toBe('Jane');
+
+        store.$set('user.settings.theme', 'dark');
+        expect(store.user.settings.theme).toBe('dark');
+      });
+
+      test('sets array values using index notation', () => {
+        store.$set('items[1]', 'x');
+        expect(store.items[1]).toBe('x');
+      });
+
+      test('sets Map values using key notation', () => {
+        store.$set('userMap[u1].role', 'user');
+        expect(store.userMap.get('u1').role).toBe('user');
+      });
+
+      test('creates intermediate objects for non-existent paths', () => {
+        store.$set('deeply.nested.value', 42);
+        expect(store.deeply.nested.value).toBe(42);
+      });
+
+      test('throws error for invalid array indices', () => {
+        expect(() => store.$set('items[-1]', 'x')).toThrow();
       });
     });
   });
