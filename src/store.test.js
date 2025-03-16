@@ -174,82 +174,87 @@ describe('Store', () => {
       let store;
       beforeEach(() => { store = createTestStore(); });
 
-      test('notifies subscribers of direct property changes', () => {
-        const changes = [];
+      const testSubscription = ({ name, path, operation, expectedChanges }) => {
+        test(name, () => {
+          const changes = [];
+          const unsubscribe = store.$subscribe(path, value => changes.push(value));
 
-        store.$subscribe('user.name', (value) => changes.push(value));
-        store.user.name = 'Jane';
+          // Test subscription
+          operation();
+          expect(changes).toEqual(expectedChanges);
 
-        expect(changes).toEqual(['Jane']);
+          // Test unsubscribe
+          changes.length = 0;
+          unsubscribe();
+          operation();
+          expect(changes).toEqual([]);
+        });
+      };
+
+      testSubscription({
+        name: 'notifies subscribers of direct property changes',
+        path: 'user.name',
+        operation: () => { store.user.name = 'Jane'; },
+        expectedChanges: ['Jane']
       });
 
-      test('notifies subscribers of nested property changes', () => {
-        const changes = [];
-
-        store.$subscribe('user.settings.theme', (value) => changes.push(value));
-        store.user.settings.theme = 'dark';
-
-        expect(changes).toEqual(['dark']);
+      testSubscription({
+        name: 'notifies subscribers of nested property changes',
+        path: 'user.settings.theme',
+        operation: () => { store.user.settings.theme = 'dark'; },
+        expectedChanges: ['dark']
       });
 
-      test('notifies subscribers of array element changes', () => {
-        const changes = [];
-
-        store.$subscribe('items[1]', (value) => changes.push(value));
-        store.items[1] = 'x';
-
-        expect(changes).toEqual(['x']);
+      testSubscription({
+        name: 'notifies subscribers of array element changes',
+        path: 'items[1]',
+        operation: () => { store.items[1] = 'x'; },
+        expectedChanges: ['x']
       });
 
-      test('notifies subscribers when array methods modify the array', () => {
-        const changes = [];
-
-        store.$subscribe('items', (value) => changes.push([...value]));
-        store.items.push('d');
-
-        expect(changes).toEqual([['a', 'b', 'c', 'd']]);
+      testSubscription({
+        name: 'notifies subscribers when array methods modify the array',
+        path: 'items',
+        operation: () => { store.items.push('d'); },
+        expectedChanges: [['a', 'b', 'c', 'd']]
       });
 
-      test('notifies subscribers of Map value changes', () => {
-        const changes = [];
-
-        store.$subscribe('userMap[u1].role', (value) => changes.push(value));
-        store.userMap.get('u1').role = 'user';
-
-        expect(changes).toEqual(['user']);
+      testSubscription({
+        name: 'notifies subscribers of Map value changes',
+        path: 'userMap[u1].role',
+        operation: () => { store.userMap.get('u1').role = 'user'; },
+        expectedChanges: ['user']
       });
 
-      test('notifies Map key subscribers when using Map.set', () => {
-        const changes = [];
-        store.$subscribe('userMap[u2]', (value) => changes.push(value));
-        store.userMap.set('u2', { role: 'guest' });
-        expect(changes).toEqual([{ role: 'guest' }]);
+      testSubscription({
+        name: 'notifies Map key subscribers when using Map.set',
+        path: 'userMap[u2]',
+        operation: () => { store.userMap.set('u2', { role: 'guest' }); },
+        expectedChanges: [{ role: 'guest' }]
       });
 
-      test('notifies Map subscribers when using Map.set', () => {
-        const changes = [];
-        store.$subscribe('userMap', (value) => changes.push(new Map(value)));
-        store.userMap.set('u2', { role: 'guest' });
-        expect(changes).toEqual([
-          new Map([
-            ['u1', { role: 'admin' }],
-            ['u2', { role: 'guest' }]
-          ])
-        ]);
+      testSubscription({
+        name: 'notifies Map subscribers when using Map.set',
+        path: 'userMap',
+        operation: () => { store.userMap.set('u2', { role: 'guest' }); },
+        expectedChanges: [new Map([
+          ['u1', { role: 'admin' }],
+          ['u2', { role: 'guest' }]
+        ])]
       });
 
-      test('notifies when using Map.delete', () => {
-        const changes = [];
-        store.$subscribe('userMap[u1]', (value) => changes.push(value));
-        store.userMap.delete('u1');
-        expect(changes).toEqual([undefined]);
+      testSubscription({
+        name: 'notifies when using Map.delete',
+        path: 'userMap[u1]',
+        operation: () => { store.userMap.delete('u1'); },
+        expectedChanges: [undefined]
       });
 
-      test('notifies parent path when using Map.delete', () => {
-        const changes = [];
-        store.$subscribe('userMap', (value) => changes.push(value));
-        store.userMap.delete('u1');
-        expect(changes).toEqual([new Map()]);
+      testSubscription({
+        name: 'notifies parent path when using Map.delete',
+        path: 'userMap',
+        operation: () => { store.userMap.delete('u1'); },
+        expectedChanges: [new Map()]
       });
 
       test('does not notify on Map.delete of non-existent key', () => {
