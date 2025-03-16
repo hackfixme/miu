@@ -169,6 +169,28 @@ describe('Store', () => {
         expect(() => store.$set('items[3]', 'x')).toThrow('Invalid array index: 3');
       });
     });
+
+    describe('$subscribe', () => {
+      test('notifies subscribers of direct property changes', () => {
+        const store = createTestStore();
+        const changes = [];
+
+        store.$subscribe('user.name', (value) => changes.push(value));
+        store.user.name = 'Jane';
+
+        expect(changes).toEqual(['Jane']);
+      });
+
+      test('notifies subscribers of nested property changes', () => {
+        const store = createTestStore();
+        const changes = [];
+
+        store.$subscribe('user.settings.theme', (value) => changes.push(value));
+        store.user.settings.theme = 'dark';
+
+        expect(changes).toEqual(['dark']);
+      });
+    });
   });
 
   describe('state', () => {
