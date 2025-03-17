@@ -165,6 +165,109 @@ describe('for', () => {
     expect(items[0].querySelector('span').textContent).toBe('item1');
     expect(items[1].querySelector('span').textContent).toBe('item3');
   });
+
+  test('handles array reordering correctly', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: [
+        { id: 1, text: 'first' },
+        { id: 2, text: 'second' },
+        { id: 3, text: 'third' }
+      ]
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template><li><span data-miu-bind="@.id"></span>:<span data-miu-bind="@.text"></span></li></template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial order
+    let items = document.querySelectorAll('li');
+    expect(items.length).toBe(3);
+    expect(items[0].textContent).toBe('1:first');
+    expect(items[1].textContent).toBe('2:second');
+    expect(items[2].textContent).toBe('3:third');
+
+    // Reverse array order
+    store.items.reverse();
+    items = document.querySelectorAll('li');
+    expect(items[0].textContent).toBe('3:third');
+    expect(items[1].textContent).toBe('2:second');
+    expect(items[2].textContent).toBe('1:first');
+
+    // Sort by text
+    store.items.sort((a, b) => a.text.localeCompare(b.text));
+    items = document.querySelectorAll('li');
+    expect(items[0].textContent).toBe('1:first');
+    expect(items[1].textContent).toBe('2:second');
+    expect(items[2].textContent).toBe('3:third');
+  });
+
+  test('handles sorting with computed values', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: [
+        { value: 3, computed: () => 3 * 2 },
+        { value: 1, computed: () => 1 * 2 },
+        { value: 2, computed: () => 2 * 2 }
+      ]
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template><li><span data-miu-bind="@.value"></span>:<span data-miu-bind="@.computed"></span></li></template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    let items = document.querySelectorAll('li');
+    expect(items[0].textContent).toBe('3:6');
+    expect(items[1].textContent).toBe('1:2');
+    expect(items[2].textContent).toBe('2:4');
+
+    store.items.sort((a, b) => a.value - b.value);
+    items = document.querySelectorAll('li');
+    expect(items[0].textContent).toBe('1:2');
+    expect(items[1].textContent).toBe('2:4');
+    expect(items[2].textContent).toBe('3:6');
+  });
+
+  test('maintains element state through array operations', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: [
+        { id: 1, text: 'first' },
+        { id: 2, text: 'second' },
+        { id: 3, text: 'third' }
+      ]
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li>
+            <input type="text" data-miu-bind="@.text">
+          </li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    // Modify an input value
+    let inputs = document.querySelectorAll('input');
+    inputs[1].value = 'modified';
+    inputs[1].dispatchEvent(new Event('input'));
+
+    // Sort the array
+    store.items.sort((a, b) => b.id - a.id);
+
+    // Check if the modified value persists
+    inputs = document.querySelectorAll('input');
+    expect(inputs[1].value).toBe('modified');
+    expect(store.items[1].text).toBe('modified');
+  });
 });
 
 function randomString() {
