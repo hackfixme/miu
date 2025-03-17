@@ -1,13 +1,10 @@
 import { expect, describe, test } from 'vitest';
-import { Store, bind } from './miu.js';
+import { bind } from './bind.js';
+import { Store } from './store.js';
 
-function randomString() {
-  return Math.random().toString(36).substring(2, 10);
-}
-
-describe('Data binding', () => {
-  test('store updates element value', async () => {
-    const storeName = `test-${randomString()}`
+describe('bind', () => {
+  test('store updates element value', () => {
+    const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 'before' });
 
     document.body.innerHTML = `
@@ -21,8 +18,8 @@ describe('Data binding', () => {
     expect(input.value).toBe('after');
   });
 
-  test('element updates store value', async () => {
-    const storeName = `test-${randomString()}`
+  test('element updates store value', () => {
+    const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 'before' });
 
     document.body.innerHTML = `
@@ -36,9 +33,11 @@ describe('Data binding', () => {
     input.dispatchEvent(new Event('input'));
     expect(store.value).toBe('after');
   });
+});
 
-  test('array elements are reactive', async () => {
-    const storeName = `test-${randomString()}`
+describe('for', () => {
+  test('array elements are reactive', () => {
+    const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       items: [
         { text: 'item1' },
@@ -84,3 +83,7 @@ describe('Data binding', () => {
     expect(items[1].querySelector('span').textContent).toBe('item3');
   });
 });
+
+function randomString() {
+  return Math.random().toString(36).substring(2, 10);
+}
