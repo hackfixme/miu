@@ -320,6 +320,35 @@ describe('Store', () => {
         expect(changes).toEqual(['newValue', undefined]);
       });
 
+      test('supports multiple subscribers to same path', () => {
+        const changes1 = [];
+        const changes2 = [];
+
+        store.$subscribe('user.name', (value) => changes1.push(value));
+        store.$subscribe('user.name', (value) => changes2.push(value));
+
+        store.user.name = 'Jane';
+        store.user.name = 'Bob';
+
+        expect(changes1).toEqual(['Jane', 'Bob']);
+        expect(changes2).toEqual(['Jane', 'Bob']);
+      });
+
+      test('unsubscribe removes only the specific callback', () => {
+        const changes1 = [];
+        const changes2 = [];
+
+        const unsub1 = store.$subscribe('user.name', (value) => changes1.push(value));
+        store.$subscribe('user.name', (value) => changes2.push(value));
+
+        store.user.name = 'Jane';
+        unsub1();
+        store.user.name = 'Bob';
+
+        expect(changes1).toEqual(['Jane']);
+        expect(changes2).toEqual(['Jane', 'Bob']);
+      });
+
       test('handles subscriptions to non-existent paths', () => {
         const changes = [];
         store.$subscribe('user.nonexistent.deep', (value) => changes.push(value));
