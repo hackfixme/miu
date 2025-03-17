@@ -87,6 +87,38 @@ describe('bind', () => {
 });
 
 describe('for', () => {
+  test('handles empty arrays correctly', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: []
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li data-miu-bind="@.text"></li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial empty state
+    let items = document.querySelectorAll('li');
+    expect(items.length).toBe(0);
+
+    // Adding items works
+    store.items.push({ text: 'first item' });
+    items = document.querySelectorAll('li');
+    expect(items.length).toBe(1);
+    expect(items[0].textContent).toBe('first item');
+
+    // Clearing array removes all items
+    // NOTE: store.items.length = 0 is not supported.
+    store.items = [];
+    items = document.querySelectorAll('li');
+    expect(items.length).toBe(0);
+  });
+
   test('binds array items and handles item removal', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {

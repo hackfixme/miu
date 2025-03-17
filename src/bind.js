@@ -28,13 +28,23 @@ const storeSubs = new WeakMap();
 // TODO: Extract DOM updating.
 function setupBindings(root) {
   // Setup for loops first as they create new elements.
-  for (const el of root.querySelectorAll(`[${ATTRS.FOR}]`)) {
+  const forSelector = `[${ATTRS.FOR}]`;
+  const forElements = [
+      ...(root.matches(forSelector) ? [root] : []),
+      ...root.querySelectorAll(forSelector)
+  ];
+  for (const el of forElements) {
     const {store, path} = parseBindAttr(el, ATTRS.FOR);
     bindForEach(el, store, path);
   };
 
   // Setup all other bindings.
-  for (const el of root.querySelectorAll(`[${ATTRS.BIND}]`)) {
+  const bindSelector = `[${ATTRS.BIND}]`;
+  const bindElements = [
+      ...(root.matches(bindSelector) ? [root] : []),
+      ...root.querySelectorAll(bindSelector)
+  ];
+  for (const el of bindElements) {
     const {store, path, key} = parseBindAttr(el, ATTRS.BIND);
     bindElement(el, store, path, key);
   };
