@@ -13,6 +13,25 @@ describe('Store', () => {
     userMap: new Map([['u1', { role: 'admin' }]])
   });
 
+  const testInvalidPathSyntax = (method, ...args) => {
+    const store = createTestStore();
+    describe('invalid path syntax', () => {
+      test.each([
+        ['empty brackets', 'items[]'],
+        ['unclosed brackets', 'userMap[key'],
+        ['consecutive dots', 'user..name'],
+        ['leading dot', '.user.name'],
+        ['trailing dot', 'user.name.'],
+        ['starting number', '1user.name'],
+        ['containing hyphen', 'users-2.name'],
+      ])('%s', (_, path) => {
+        expect(() => {
+          store[method](path, ...args);
+        }).toThrow('Invalid path syntax');
+      });
+    });
+  };
+
   describe('constructor', () => {
     test('creates store with initial state', () => {
       const store = new Store('testStore', { count: 0 });
@@ -133,6 +152,8 @@ describe('Store', () => {
         expect(store.$get('user.nonexistent')).toBeUndefined();
         expect(store.$get('items[99]')).toBeUndefined();
       });
+
+      testInvalidPathSyntax('$get');
     });
 
     describe('$set', () => {
@@ -168,6 +189,8 @@ describe('Store', () => {
         expect(() => store.$set('items[-1]', 'x')).toThrow('Invalid array index: -1');
         expect(() => store.$set('items[3]', 'x')).toThrow('Invalid array index: 3');
       });
+
+      testInvalidPathSyntax('$set', '');
     });
 
     describe('$subscribe', () => {
@@ -405,6 +428,8 @@ describe('Store', () => {
           profile: { name: { first: 'Jane', last: 'Doe' } }
         }]);
       });
+
+      testInvalidPathSyntax('$subscribe', () => {});
     });
   });
 

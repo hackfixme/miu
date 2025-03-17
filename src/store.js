@@ -105,6 +105,45 @@ class Store {
   }
 
   /**
+   * Validates path syntax for store operations.
+   * Valid paths:
+   * - Single property: 'user'
+   * - Dot notation: 'user.name', 'user1.name', 'item123.value'
+   * - Bracket notation: 'users[0]', 'users[someKey]'
+   * - Mixed notation: 'users[0].name', 'user2[0].settings'
+   *
+   * Invalid paths:
+   * - Starting with number: '1user.name'
+   * - Containing hyphens: 'users-2.name'
+   * - Empty brackets: 'users[]'
+   * - Unclosed brackets: 'users[0'
+   * - Consecutive dots: 'user..name'
+   *
+   * @private
+   * @param {string} path - Path to validate
+   * @throws {Error} If path syntax is invalid
+   */
+  _validatePath(path) {
+    if (path === '') return;     // Allow empty path for root listeners
+
+    const parts = [
+      '^',                       // Start of string
+      '(?:[a-zA-Z_$][\\w$]*)',   // First property name: must start with letter/underscore/$ followed by word chars or $
+      '(?:',                     // Start non-capturing group for repeating parts
+        '\\.[a-zA-Z_$][\\w$]*|', // Dot notation: dot followed by property name
+        '\\[[^\\[\\]]+\\]',      // Bracket notation: anything except brackets inside []
+      ')*',                      // Zero or more repetitions of dot/bracket parts
+      '$'                        // End of string
+    ];
+
+    const pathRegex = new RegExp(parts.join(''));
+
+    if (!pathRegex.test(path)) {
+      throw new Error('Invalid path syntax');
+    }
+  }
+
+  /**
    * Creates the public API methods for the store
    * @private
    * @param {Object} state - Store state object
@@ -114,9 +153,17 @@ class Store {
    */
   _createAPI(state, listeners, pathOps) {
     return {
-      $get: (path) => pathOps.get(state, path),
-      $set: (path, value) => pathOps.set(state, path, value),
+      $get: (path) => {
+        this._validatePath(path);
+        return pathOps.get(state, path);
+      },
+      $set: (path, value) => {
+        this._validatePath(path);
+        pathOps.set(state, path, value);
+      },
       $subscribe: (path, callback) => {
+        this._validatePath(path);
+
         if (!listeners.has(path)) {
           listeners.set(path, new Set());
         }
