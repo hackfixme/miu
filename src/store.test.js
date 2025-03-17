@@ -187,7 +187,7 @@ describe('Store', () => {
 
       test('throws error for invalid array indices', () => {
         expect(() => store.$set('items[-1]', 'x')).toThrow('Invalid array index: -1');
-        expect(() => store.$set('items[3]', 'x')).toThrow('Invalid array index: 3');
+        expect(() => store.$set('items[999]', 'x')).toThrow('Invalid array index: 999');
       });
 
       testInvalidPathSyntax('$set', '');
@@ -215,35 +215,84 @@ describe('Store', () => {
       };
 
       testSubscription({
-        name: 'notifies subscribers of direct property changes',
+        name: 'notifies on direct property changes',
         path: 'user.name',
         operation: () => { store.user.name = 'Jane'; },
         expectedChanges: ['Jane']
       });
 
       testSubscription({
-        name: 'notifies subscribers of nested property changes',
+        name: 'notifies on nested property changes',
         path: 'user.settings.theme',
         operation: () => { store.user.settings.theme = 'dark'; },
         expectedChanges: ['dark']
       });
 
       testSubscription({
-        name: 'notifies subscribers of array element changes',
+        name: 'notifies on array element changes',
         path: 'items[1]',
         operation: () => { store.items[1] = 'x'; },
         expectedChanges: ['x']
       });
 
       testSubscription({
-        name: 'notifies subscribers when array methods modify the array',
+        name: 'notifies parent on array element changes',
+        path: 'items',
+        operation: () => { store.items[0] = 'x'; },
+        expectedChanges: [['x', 'b', 'c']]
+      });
+
+      testSubscription({
+        name: 'notifies on array push operation',
         path: 'items',
         operation: () => { store.items.push('d'); },
         expectedChanges: [['a', 'b', 'c', 'd']]
       });
 
       testSubscription({
-        name: 'notifies subscribers of Map value changes',
+        name: 'notifies on array pop operation',
+        path: 'items',
+        operation: () => { store.items.pop(); },
+        expectedChanges: [['a', 'b']]
+      });
+
+      testSubscription({
+        name: 'notifies on array shift operation',
+        path: 'items',
+        operation: () => { store.items.shift(); },
+        expectedChanges: [['b', 'c']]
+      });
+
+      testSubscription({
+        name: 'notifies on array unshift operation',
+        path: 'items',
+        operation: () => { store.items.unshift('x'); },
+        expectedChanges: [['x', 'a', 'b', 'c']]
+      });
+
+      testSubscription({
+        name: 'notifies on array splice operation',
+        path: 'items',
+        operation: () => { store.items.splice(1, 1, 'x', 'y'); },
+        expectedChanges: [['a', 'x', 'y', 'c']]
+      });
+
+      testSubscription({
+        name: 'notifies on array sort operation',
+        path: 'items',
+        operation: () => { store.items.sort(); },
+        expectedChanges: [['a', 'b', 'c']]
+      });
+
+      testSubscription({
+        name: 'notifies on array reverse operation',
+        path: 'items',
+        operation: () => { store.items.reverse(); },
+        expectedChanges: [['c', 'b', 'a']]
+      });
+
+      testSubscription({
+        name: 'notifies on Map value changes',
         path: 'userMap[u1].role',
         operation: () => { store.userMap.get('u1').role = 'user'; },
         expectedChanges: ['user']
@@ -278,6 +327,37 @@ describe('Store', () => {
         path: 'userMap',
         operation: () => { store.userMap.delete('u1'); },
         expectedChanges: [new Map()]
+      });
+
+      test('handles multiple array mutations in sequence', () => {
+        const changes = [];
+        store.$subscribe('items', value => changes.push([...value]));
+
+        store.items[0] = 'x';
+        store.items[1] = 'y';
+        store.items.push('d');
+
+        expect(changes).toEqual([
+          ['x', 'b', 'c'],
+          ['x', 'y', 'c'],
+          ['x', 'y', 'c', 'd']
+        ]);
+      });
+
+      test('handles empty array operations correctly', () => {
+        const store = new Store('testStore', { emptyArr: [] });
+        const changes = [];
+        store.$subscribe('emptyArr', value => changes.push([...value]));
+
+        store.emptyArr.push('a');
+        store.emptyArr.push('b');
+        store.emptyArr.pop();
+
+        expect(changes).toEqual([
+          ['a'],
+          ['a', 'b'],
+          ['a']
+        ]);
       });
 
       test('does not notify on Map.delete of non-existent key', () => {
@@ -532,6 +612,12 @@ describe('Store', () => {
       expect(store.userMap.u1.role).toBe('user3');
       store.userMap = new Map([['u1', { role: 'user4' }]]);
       expect(store.userMap.u1.role).toBe('user4');
+    });
+
+    test('throws error on invalid array index access', () => {
+      const store = createTestStore();
+      expect(() => { store.items[-1] = 'x'; }).toThrow('Invalid array index');
+      expect(() => { store.items[999] = 'x'; }).toThrow('Invalid array index');
     });
   });
 });
