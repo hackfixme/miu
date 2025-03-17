@@ -148,7 +148,18 @@ class Store {
         listeners.get(path).forEach(callback => callback(value));
       }
 
-      // Notify parent paths (e.g., 'user' listeners get notified of 'user.name' changes)
+      // Notify child subscribers on parent changes.
+      // E.g. changes to 'user' should notify 'user.name' subscribers.
+      // TODO: Optimize this to avoid looping over all listeners.
+      for (const [listenerPath, callbacks] of listeners) {
+        if (listenerPath.startsWith(path + '.')) {
+          const childValue = pathOps.get(initialState, listenerPath);
+          callbacks.forEach(callback => callback(childValue));
+        }
+      }
+
+      // If no exact or child matches, check parent paths.
+      // E.g. changes to 'user.name' should notify 'user' subscribers.
       const parts = path.split('.');
       while (parts.length > 1) {
         parts.pop();
@@ -278,8 +289,8 @@ class Store {
         target[prop] = value;
         notifyListeners(newPath, value);
 
-        // Notify parent for object/map changes
-        if (target instanceof Map || typeof target === 'object') {
+        // Only notify parent for Map changes
+        if (target instanceof Map) {
           notifyListeners(path, target);
         }
 

@@ -296,6 +296,94 @@ describe('Store', () => {
         store.mapOfMaps.delete('m1');
         expect(changes).toEqual(['newValue', undefined]);
       });
+
+      test('handles subscriptions to non-existent paths', () => {
+        const changes = [];
+        store.$subscribe('user.nonexistent.deep', (value) => changes.push(value));
+
+        store.$set('user.nonexistent', { deep: 'value' });
+        expect(changes).toEqual(['value']);
+
+        store.$set('user.nonexistent.deep', 'updated');
+        expect(changes).toEqual(['value', 'updated']);
+      });
+
+      test('parent path subscribers receive updates for nested changes', () => {
+        const userChanges = [];
+        const nameChanges = [];
+
+        store.$subscribe('user', (value) => userChanges.push(value));
+        store.$subscribe('user.name', (value) => nameChanges.push(value));
+
+        store.user.name = 'Jane';
+
+        expect(nameChanges).toEqual(['Jane']);
+        expect(userChanges).toEqual([{ name: 'Jane', settings: { theme: 'light' } }]);
+      });
+
+      test('handles subscription to root path', () => {
+        const changes = [];
+        store.$subscribe('', (value) => changes.push(value));
+
+        store.user.name = 'Jane';
+        expect(changes).toEqual([store.$data]);
+      });
+
+      test('notifies all relevant subscribers when value changes', () => {
+        const exactChanges = [];
+        const childChanges = [];
+        const parentChanges = [];
+
+        // Set up subscribers at different levels
+        store.$subscribe('user.name', value => exactChanges.push(value));
+        store.$subscribe('user.name.first', value => childChanges.push(value));
+        store.$subscribe('user', value => parentChanges.push(value));
+
+        // Trigger a change
+        store.user.name = 'Jane';
+
+        // All subscribers should be notified
+        expect(exactChanges).toEqual(['Jane']);
+        expect(childChanges).toEqual([undefined]); // Since user.name is now a string, not an object
+        expect(parentChanges).toEqual([{
+          name: 'Jane',
+          settings: { theme: 'light' }
+        }]);
+      });
+
+      test('notifies all relevant subscribers for nested object changes', () => {
+        const store = new Store('test', {
+          user: {
+            profile: {
+              name: {
+                first: 'John',
+                last: 'Doe'
+              }
+            }
+          }
+        });
+
+        const exactChanges = [];
+        const childChanges = [];
+        const parentChanges = [];
+        const rootChanges = [];
+
+        store.$subscribe('user.profile.name', value => exactChanges.push(value));
+        store.$subscribe('user.profile.name.first', value => childChanges.push(value));
+        store.$subscribe('user.profile', value => parentChanges.push(value));
+        store.$subscribe('user', value => rootChanges.push(value));
+
+        store.user.profile.name.first = 'Jane';
+
+        expect(childChanges).toEqual(['Jane']);
+        expect(exactChanges).toEqual([{ first: 'Jane', last: 'Doe' }]);
+        expect(parentChanges).toEqual([{
+          name: { first: 'Jane', last: 'Doe' }
+        }]);
+        expect(rootChanges).toEqual([{
+          profile: { name: { first: 'Jane', last: 'Doe' } }
+        }]);
+      });
     });
   });
 
