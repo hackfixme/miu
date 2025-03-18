@@ -124,6 +124,9 @@ class Store {
    * @throws {Error} If path syntax is invalid
    */
   _validatePath(path) {
+    if (typeof path === 'undefined') {
+      throw new Error('path is undefined');
+    }
     if (path === '') return;     // Allow empty path for root listeners
 
     const parts = [
@@ -176,6 +179,7 @@ class Store {
           }
         };
       },
+      // TODO: Support $data at all path levels, not just root.
       get $data() { return deepCopy(state); }
     };
   }
@@ -305,6 +309,7 @@ class Store {
 
     const createProxyHandler = (path) => ({
       get: (target, prop) => {
+        // TODO: Proxy Map.size and Array.length
         const value = target[prop];
 
         if (typeof value === 'function' && value.constructor.name === 'get') {

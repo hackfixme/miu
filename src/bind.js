@@ -4,6 +4,7 @@ const ATTRS = {
   BIND:  'data-miu-bind',
   FOR:   'data-miu-for',
   INDEX: 'data-miu-index',
+  KEY:   'data-miu-key',
   ON:    'data-miu-on',
 };
 
@@ -56,13 +57,17 @@ function setupBindings(root) {
 function getBindContext(element) {
   const forParent = element.parentElement.closest(`[${ATTRS.FOR}]`);
   const parentCtx = bindContexts.get(forParent);
-  const idx = element.closest(`[${ATTRS.INDEX}]`)?.getAttribute(ATTRS.INDEX);
+  const idxEl = element.closest(`[${ATTRS.INDEX}]`);
 
   let context = {};
-  if (parentCtx?.store && idx) {
+  if (parentCtx?.store && idxEl) {
+    const idx = idxEl.getAttribute(ATTRS.INDEX);
+    const key = idxEl.getAttribute(ATTRS.KEY);
     context = {
-      item: parentCtx.items[idx],
+      // The Store implementation supports bracket notation for Maps, objects and arrays.
+      item: parentCtx.items[key || idx],
       index: idx,
+      key: key,
       store: parentCtx.store,
       path: parentCtx.path,
     };
@@ -101,24 +106,36 @@ function parseBindAttr(el, attr) {
 
 function resolveStoreRef(attr, ref, bindCtx) {
   // TODO: Make sure that Symbol keys are supported.
+
+  // The store implementation simplifies the path syntax here.
+  // bindCtx.path is the base path up until the element we need to resolve.
+  // Since store Map elements can be accessed using bracket notation, just like objects,
+  // we use the key if it's defined. Otherwise, we assume the item is an array element,
+  // and retrieve it by its index (which should always be defined).
+  const path = `${bindCtx.path}[${bindCtx.key || bindCtx.index}]`;
+
   if (ref === KEY || ref === INDEX) {
     if (attr === ATTRS.FOR) {
       throw new Error(`${ref} is unsupported for ${ATTRS.FOR}`);
     }
-    return { store: bindCtx.store, key: bindCtx.index };
+    return {
+      store: bindCtx.store,
+      path: path,
+      key: bindCtx.key,
+    };
   }
 
   if (ref.startsWith(`${SEL}.`)) {
     return {
       store: bindCtx.store,
-      path: `${bindCtx.path}[${bindCtx.index}]${ref.slice(1)}`,
+      path: `${path}${ref.slice(1)}`,
     };
   }
 
   if (ref.startsWith(VALUE)) {
     return {
       store: bindCtx.store,
-      path: `${bindCtx.path}[${bindCtx.index}]${ref.slice(6)}`,
+      path: `${path}${ref.slice(6)}`,
     };
   }
 
@@ -193,9 +210,9 @@ function storeSubscribe(element, path, subFn) {
     storeSubs.set(element, new Map());
   }
   const elementStoreSubs = storeSubs.get(element);
-  if (!elementStoreSubs.get(path)) {
+  if (!elementStoreSubs.has(path)) {
     const unsub = subFn();
-    elementStoreSubs.set(element, unsub);
+    elementStoreSubs.set(path, unsub);
   }
 }
 
@@ -232,7 +249,7 @@ function bindInput(element, store, path, value) {
     store.$set(path, e.target.value);
   });
   storeSubscribe(element, path, () => {
-    store.$subscribe(path, (value) => {
+    return store.$subscribe(path, (value) => {
       if (element.value !== value) {
         element.value = value;
       }
@@ -253,7 +270,7 @@ function bindCheckbox(element, store, path, value) {
     store.$set(path, e.target.checked);
   });
   storeSubscribe(element, path, () => {
-    store.$subscribe(path, (value) => {
+    return store.$subscribe(path, (value) => {
       if (element.checked !== value) {
         element.checked = value;
       }
@@ -267,7 +284,7 @@ function bindText(element, store, path, value) {
     element.textContent = value;
   }
   storeSubscribe(element, path, () => {
-    store.$subscribe(path, (value) => {
+    return store.$subscribe(path, (value) => {
       if (element.textContent !== value) {
         element.textContent = value;
       }
@@ -275,6 +292,16 @@ function bindText(element, store, path, value) {
   });
 }
 
+/**
+ * Creates an iterator that yields [index, key, value] tuples for any iterable.
+ * @param {*} items - The items to iterate over (array, object, Map, or other iterable)
+ * @param {string} path - Path identifier for error messages
+ * @returns {Iterator<[number, (string|undefined), *]>} Iterator yielding tuples of:
+ *   - number: zero-based index
+ *   - string|undefined: key (for Objects/Maps) or undefined (for Arrays/other iterables)
+ *   - *: the value at that position
+ * @throws {Error} If items is null/undefined or not iterable
+ */
 const getIndexedIterator = (items, path) => {
   if (items == null) {
     throw new Error(`Value of ${path} is null or undefined`);
@@ -282,22 +309,40 @@ const getIndexedIterator = (items, path) => {
   if (!Symbol.iterator in Object(items)) {
     throw new Error(`Value of ${path} is not iterable`);
   }
-  if (Array.isArray(items)) {
-    return items.entries();
-  }
-  if (items instanceof Map) {
-    return items.entries();
-  }
-  if (items instanceof Object) {
-    return Object.entries(items);
-  }
-  const type = Object.prototype.toString.call(items).slice(8, -1);
-  console.warn(`The type of ${path} is ${type}. Access by index might not be supported.`);
 
   let index = 0;
+
+  if (Array.isArray(items)) {
+    return function* () {
+      for (const value of items) {
+        yield [index, undefined, value];
+        index++;
+      }
+    }();
+  }
+
+  if (items instanceof Map) {
+    return function* () {
+      for (const [key, value] of items.entries()) {
+        yield [index, key, value];
+        index++;
+      }
+    }();
+  }
+
+  if (items instanceof Object) {
+    return function* () {
+      for (const [key, value] of Object.entries(items)) {
+        yield [index, key, value];
+        index++;
+      }
+    }();
+  }
+
   return function* () {
     for (const value of items) {
-      yield [index++, value];
+      yield [index, undefined, value];
+      index++;
     }
   }();
 };
@@ -325,25 +370,37 @@ function bindForEach(element, store, path) {
     bindContexts.set(element, { store, path, items });
 
     let count = 0;
-    for (const [index] of iterator) {
+    for (const [index, key] of iterator) {
       // TODO: Filter only elements managed by Miu, to allow other elements to
       // exist within the for-loop container.
-      const el = element.children[index + 1]; // +1 to account for the template
+      let el = element.children[index + 1]; // +1 to account for the template
+      let cloned = false;
       if (!el) {
         // No element for this item, so create it.
         const clone = document.importNode(template.content, true);
         element.appendChild(clone);
-        const child = element.lastElementChild;
-        // Set the index of this item so that it can be passed to all child
-        // event handlers.
-        child.setAttribute(ATTRS.INDEX, index);
-        setupBindings(child);
-        setupEventHandlers(child);
-      } else {
-        // The element exists, so just update its index and bindings.
-        el.setAttribute(ATTRS.INDEX, index);
-        setupBindings(el);
+        el = element.lastElementChild;
+        cloned = true;
       }
+
+      // Set the index of this item so that it can be used to retrieve the
+      // bind context when rendering. This could also be handled internally
+      // in another map, but it might be useful to expose it to users.
+      el.setAttribute(ATTRS.INDEX, index);
+      if (key) {
+        // Also set the key if it's an object or Map element.
+        el.setAttribute(ATTRS.KEY, key);
+      }
+
+      // TODO: Only re-render elements if the element wasn't cloned. There's no
+      // need to setup the bindings again. In practice it's not a problem, since
+      // storeSubscribe ensures only a single subscription is added, but it's
+      // unnecessary.
+      setupBindings(el);
+      if (cloned) {
+        setupEventHandlers(el);
+      }
+
       count++;
     }
 

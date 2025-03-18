@@ -1,6 +1,9 @@
 import { expect, describe, test } from 'vitest';
 import { bind } from './bind.js';
 import { Store } from './store.js';
+// TODO: Remove deepCopy once $data is implemented for all paths, and
+// Array.length and Map.size are properly proxied.
+import { deepCopy } from './util.js';
 
 describe('bind', () => {
   test('text input binds to string store value', () => {
@@ -119,7 +122,7 @@ describe('for', () => {
     expect(items.length).toBe(0);
   });
 
-  test('binds array items and handles item removal', () => {
+  test('renders array elements and handles element removal', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       items: [
@@ -267,6 +270,155 @@ describe('for', () => {
     inputs = document.querySelectorAll('input');
     expect(inputs[1].value).toBe('modified');
     expect(store.items[1].text).toBe('modified');
+  });
+
+  test('renders Map entries and handles entry removal', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: new Map([
+        ['key1', { text: 'first' }],
+        ['key2', { text: 'second' }]
+      ]),
+      removeItem(event, context) {
+        this.items.delete(context.key);
+      }
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li>
+            <div><span data-miu-bind="@key"></span>:<span data-miu-bind="@value.text"></span></div>
+            <button data-miu-on="click:${storeName}.removeItem">×</button>
+          </li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial render
+    let items = document.querySelectorAll('li > div');
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toBe('key1:first');
+    expect(items[1].textContent).toBe('key2:second');
+
+    // Store updates UI
+    store.items.set('key3', { text: 'third' });
+    expect(deepCopy(store.items).size).toBe(3);
+    items = document.querySelectorAll('li > div');
+    expect(items.length).toBe(3);
+    expect(items[0].textContent).toBe('key1:first');
+    expect(items[1].textContent).toBe('key2:second');
+    expect(items[2].textContent).toBe('key3:third');
+
+    // UI event updates store and UI
+    document.querySelector('li:nth-of-type(2) button').click();
+    expect(deepCopy(store.items).size).toBe(2);
+    items = document.querySelectorAll('li > div');
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toBe('key1:first');
+    expect(items[1].textContent).toBe('key3:third');
+  });
+
+  test('renders Object entries and handles entry removal', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: {
+        key1: { text: 'first' },
+        key2: { text: 'second' }
+      },
+      removeItem(event, context) {
+        delete this.items[context.key];
+      }
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li>
+            <div><span data-miu-bind="@key"></span>:<span data-miu-bind="@value.text"></span></div>
+            <button data-miu-on="click:${storeName}.removeItem">×</button>
+          </li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial render
+    let items = document.querySelectorAll('li > div');
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toBe('key1:first');
+    expect(items[1].textContent).toBe('key2:second');
+
+    // Store updates UI
+    store.items.key3 = { text: 'third' };
+    expect(Object.keys(store.items).length).toBe(3);
+    items = document.querySelectorAll('li > div');
+    expect(items.length).toBe(3);
+    expect(items[0].textContent).toBe('key1:first');
+    expect(items[1].textContent).toBe('key2:second');
+    expect(items[2].textContent).toBe('key3:third');
+
+    // UI event updates store and UI
+    document.querySelector('li:nth-of-type(2) button').click();
+    expect(Object.keys(store.items).length).toBe(2);
+    items = document.querySelectorAll('li > div');
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toBe('key1:first');
+    expect(items[1].textContent).toBe('key3:third');
+  });
+
+  test('renders nested arrays and objects', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      users: [
+        {
+          name: 'John',
+          contacts: [
+            { type: 'email', value: 'john@test.com' },
+            { type: 'phone', value: '123-456' }
+          ]
+        },
+        {
+          name: 'Jane',
+          contacts: [
+            { type: 'email', value: 'jane@test.com' }
+          ]
+        }
+      ]
+    });
+
+    document.body.innerHTML = `
+      <div data-miu-for="${storeName}.users">
+        <template>
+          <div class="user">
+            <h3 data-miu-bind="@.name"></h3>
+            <ul data-miu-for="@.contacts">
+              <template>
+                <li><span data-miu-bind="@.type"></span>:<span data-miu-bind="@.value"></span></li>
+              </template>
+            </ul>
+          </div>
+        </template>
+      </div>
+    `;
+    bind(document.body, [store]);
+
+    const users = document.querySelectorAll('.user');
+    expect(users.length).toBe(2);
+
+    const firstUser = users[0];
+    expect(firstUser.querySelector('h3').textContent).toBe('John');
+    const firstUserContacts = firstUser.querySelectorAll('li');
+    expect(firstUserContacts.length).toBe(2);
+    expect(firstUserContacts[0].textContent).toBe('email:john@test.com');
+    expect(firstUserContacts[1].textContent).toBe('phone:123-456');
+
+    const secondUser = users[1];
+    expect(secondUser.querySelector('h3').textContent).toBe('Jane');
+    const secondUserContacts = secondUser.querySelectorAll('li');
+    expect(secondUserContacts.length).toBe(1);
+    expect(secondUserContacts[0].textContent).toBe('email:jane@test.com');
   });
 });
 
