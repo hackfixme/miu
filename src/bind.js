@@ -59,7 +59,7 @@ function getBindContext(element) {
   const parentCtx = bindContexts.get(forParent);
   const idxEl = element.closest(`[${ATTRS.INDEX}]`);
 
-  let context = {};
+  let context;
   if (parentCtx?.store && idxEl) {
     const idx = idxEl.getAttribute(ATTRS.INDEX);
     const key = idxEl.getAttribute(ATTRS.KEY);
@@ -106,6 +106,9 @@ function parseBindAttr(el, attr) {
 
 function resolveStoreRef(attr, ref, bindCtx) {
   // TODO: Make sure that Symbol keys are supported.
+  if (typeof bindCtx === 'undefined') {
+    throw new Error(`bind context is undefined for ${ref}`);
+  }
 
   // The store implementation simplifies the path syntax here.
   // bindCtx.path is the base path up until the element we need to resolve.
@@ -184,7 +187,7 @@ function setupEventHandlers(root) {
     addEventHandler(el, eventName, (event) => {
       event.preventDefault();
       const bindCtx = getBindContext(el);
-      fn.call(bindCtx.store, event, bindCtx);
+      fn.call(bindCtx?.store, event, bindCtx);
     });
   }
 }
