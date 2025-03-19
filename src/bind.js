@@ -167,7 +167,7 @@ function parseOnAttr(attr) {
   }
   const fn = store.$get(path);
   if (typeof fn !== 'function') {
-    console.warn(`Function "${fullPath}" not found`);
+    throw new Error(`${storeName}.${path} is not a function`);
   }
 
   return { eventName, fn };

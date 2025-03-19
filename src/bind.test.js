@@ -422,6 +422,20 @@ describe('for', () => {
   });
 });
 
+describe('on', () => {
+  test('throws when store handler reference is not a function', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {});
+
+    document.body.innerHTML = `
+      <button data-miu-on="click:${storeName}.nonexistentHandler">Test</button>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`${storeName}.nonexistentHandler is not a function`);
+  });
+});
+
 function randomString() {
   return Math.random().toString(36).substring(2, 10);
 }
