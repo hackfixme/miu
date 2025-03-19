@@ -423,6 +423,18 @@ describe('for', () => {
 });
 
 describe('on', () => {
+  test('throws on invalid event format', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {});
+
+    document.body.innerHTML = `
+      <button data-miu-on="click:store:func">Test</button>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow('Invalid attribute format: click:store:func');
+  });
+
   test('throws when store handler reference is not a function', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {});
@@ -433,6 +445,21 @@ describe('on', () => {
 
     expect(() => bind(document.body, [store]))
       .toThrow(`${storeName}.nonexistentHandler is not a function`);
+  });
+
+  test('throws when global handler reference is not a function', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {});
+
+    globalThis.notAFunction = 'string';
+    document.body.innerHTML = `
+      <button data-miu-on="click:notAFunction">Test</button>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow('notAFunction is not a function');
+
+    delete globalThis.notAFunction;
   });
 });
 
