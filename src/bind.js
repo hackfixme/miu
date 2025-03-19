@@ -145,50 +145,52 @@ function resolveStoreRef(attr, ref, bindCtx) {
   throw new Error(`Invalid store reference: ${ref}`);
 }
 
-function parseOnAttr(attr) {
-  const parts = attr.split(':');
-  if (!attr || parts.length > 2) {
-    throw new Error(`Invalid attribute format: ${attr}`);
-  }
+function parseOnAttr(attrStr) {
+  const parseAttrPart = (attr) => {
+    const parts = attr.split(':');
+    if (!attr || parts.length !== 2 || !parts[0] || !parts[1]) {
+      throw new Error(`Invalid attribute format: ${attr}`);
+    }
 
-  const [eventName, fnRef] = parts;
-  if (!eventName || !fnRef) {
-    throw new Error(`Invalid event name in: ${attr}`);
-  }
+    const [eventName, fnRef] = parts;
 
-  if (globalThis[fnRef]) {
-    if (typeof globalThis[fnRef] !== 'function') {
+    if (fnRef.includes('.')) {
+      const [storeName, path] = fnRef.split('.', 2);
+      const store = stores.get(storeName);
+      if (!store) {
+        throw new Error(`Store not found: ${storeName}`);
+      }
+      const fn = store.$get(path);
+      if (typeof fn !== 'function') {
+        throw new Error(`${storeName}.${path} is not a function`);
+      }
+      return { eventName, fn, store };
+    }
+
+    const fn = globalThis[fnRef];
+    if (typeof fn !== 'function') {
       throw new Error(`${fnRef} is not a function`);
     }
-    return { eventName, fn: globalThis[fnRef]};
-  }
+    return { eventName, fn };
+  };
 
-  const [storeName, path] = fnRef.split('.', 2);
-  const store = stores.get(storeName);
-  if (!store) {
-    throw new Error(`Store not found: ${storeName}`);
-  }
-  const fn = store.$get(path);
-  if (typeof fn !== 'function') {
-    throw new Error(`${storeName}.${path} is not a function`);
-  }
-
-  return { eventName, fn };
+  return attrStr.split(/\s+/).map(parseAttrPart);
 }
-
 
 // Attach event handlers to child elements of root. The handler method name is
 // retrieved from the `data-miu-on` attribute and is expected to exist on the store.
 function setupEventHandlers(root) {
   for (const el of root.querySelectorAll(`[${ATTRS.ON}]`)) {
-    const attr = el.getAttribute(ATTRS.ON);
-    const { eventName, fn } = parseOnAttr(attr);
+    const attrStr = el.getAttribute(ATTRS.ON);
+    const attrs = parseOnAttr(attrStr);
 
-    addEventHandler(el, eventName, (event) => {
-      event.preventDefault();
-      const bindCtx = getBindContext(el);
-      fn.call(bindCtx?.store, event, bindCtx);
-    });
+    for (const attr of attrs) {
+      addEventHandler(el, attr.eventName, (event) => {
+        event.preventDefault();
+        const bindCtx = getBindContext(el);
+        attr.fn.call(attr.store, event, bindCtx);
+      });
+    }
   }
 }
 
@@ -200,7 +202,7 @@ function addEventHandler(element, event, handler) {
     eventHandlers.set(element, new Map());
   }
   const elementEventHandlers = eventHandlers.get(element);
-  if (!elementEventHandlers.get(event)) {
+  if (!elementEventHandlers.has(event)) {
     element.addEventListener(event, handler);
     elementEventHandlers.set(event, handler);
   }

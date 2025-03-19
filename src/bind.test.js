@@ -543,6 +543,32 @@ describe('on', () => {
     delete globalThis.globalHandler;
   });
 
+  test('handles multiple events on same element', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      clickCount: 0,
+      mouseoverCount: 0,
+      handleClick() { this.clickCount++ },
+      handleMouseover() { this.mouseoverCount++ }
+    });
+
+    document.body.innerHTML = `
+      <button
+        data-miu-on="click:${storeName}.handleClick
+                     mouseenter:${storeName}.handleMouseover">
+        Test
+      </button>
+    `;
+    bind(document.body, [store]);
+
+    const button = document.querySelector('button');
+    button.click();
+    button.dispatchEvent(new Event('mouseenter'));
+
+    expect(store.clickCount).toBe(1);
+    expect(store.mouseoverCount).toBe(1);
+  });
+
   test('throws on invalid event format', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {});
