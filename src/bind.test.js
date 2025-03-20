@@ -607,6 +607,31 @@ describe('on', () => {
 
     delete globalThis.notAFunction;
   });
+
+  test('handles store path triggers', () => {
+    const storeName = `test-${randomString()}`;
+    const handler = vi.fn();
+    const store = new Store(storeName, {
+      count: 0,
+      handler
+    });
+
+    document.body.innerHTML = `
+      <button data-miu-on="${storeName}.count:${storeName}.handler">Test</button>
+    `;
+    bind(document.body, [store]);
+
+    store.count = 1;
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    const [[event, value, bindCtx]] = handler.mock.calls;
+    expect(event).toBeInstanceOf(CustomEvent);
+    expect(event.type).toBe('store:change');
+    expect(event.detail).toEqual({ path: 'count' });
+    expect(value).toBe(1);
+    expect(bindCtx).toBeUndefined();
+  });
+
 });
 
 function randomString() {

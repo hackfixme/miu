@@ -91,17 +91,7 @@ function parseBindAttr(el, attr) {
     return resolveStoreRef(attr, attrVal, bindCtx);
   }
 
-  const [storeName, path] = attrVal.split('.', 2);
-  if (!storeName || !path) {
-    throw new Error(`Invalid path format: ${storePath}`);
-  }
-
-  const store = stores.get(storeName);
-  if (!store) {
-    throw new Error(`Store not found: ${storeName}`);
-  }
-
-  return { store, path };
+  return getStoreAndPath(attrVal);
 }
 
 function resolveStoreRef(attr, ref, bindCtx) {
@@ -145,6 +135,20 @@ function resolveStoreRef(attr, ref, bindCtx) {
   throw new Error(`Invalid store reference: ${ref}`);
 }
 
+function getStoreAndPath(storePath) {
+  const [storeName, path] = storePath.split('.', 2);
+  if (!storeName || !path) {
+    throw new Error(`Invalid path format: ${storePath}`);
+  }
+
+  const store = stores.get(storeName);
+  if (!store) {
+    throw new Error(`Store not found: ${storeName}`);
+  }
+
+  return { store, path };
+}
+
 function parseOnAttr(attrStr) {
   const parseAttrPart = (attr) => {
     const parts = attr.split(':');
@@ -152,44 +156,83 @@ function parseOnAttr(attrStr) {
       throw new Error(`Invalid attribute format: ${attr}`);
     }
 
-    const [eventName, fnRef] = parts;
+    const [trigger, fnRef] = parts;
+    let fn, store;
 
+    // Get function reference (right side of colon)
     if (fnRef.includes('.')) {
-      const [storeName, path] = fnRef.split('.', 2);
-      const store = stores.get(storeName);
-      if (!store) {
-        throw new Error(`Store not found: ${storeName}`);
-      }
-      const fn = store.$get(path);
-      if (typeof fn !== 'function') {
-        throw new Error(`${storeName}.${path} is not a function`);
-      }
-      return { eventName, fn, store };
+      const storeAndPath = getStoreAndPath(fnRef);
+      store = storeAndPath.store;
+      fn = store.$get(storeAndPath.path);
+    } else {
+      fn = globalThis[fnRef];
     }
 
-    const fn = globalThis[fnRef];
     if (typeof fn !== 'function') {
       throw new Error(`${fnRef} is not a function`);
     }
-    return { eventName, fn };
+
+    const result = store ? { fn, store } : { fn };
+
+    // Handle trigger (left side of colon)
+    if (trigger.includes('.')) {
+      const { store, path } = getStoreAndPath(trigger);
+      return { ...result, type: 'store', triggerStore: store, triggerPath: path };
+    }
+
+    return { ...result, type: 'event', eventName: trigger };
   };
 
   return attrStr.split(/\s+/).map(parseAttrPart);
 }
 
-// Attach event handlers to child elements of root. The handler method name is
-// retrieved from the `data-miu-on` attribute and is expected to exist on the store.
+/**
+ * Attach event handlers to child elements of root that have the data-miu-on
+ * attribute set. The trigger for calling the handler can either be a specific
+ * event, or a data store change for a specific path. The handler can be defined
+ * globally, or on a specific store. Multiple events can be attached to a single
+ * element by separating them with a space.
+ * @param {HTMLElement} root - Root element to search for binding attributes
+ * @example
+ * // Event binding - calls global function
+ * <button data-miu-on="click:handleClick">Click me</button>
+ *
+ * // Event binding - calls store method
+ * <button data-miu-on="click:myStore.handleClick">Click me</button>
+ *
+ * // Store path binding - triggers when store value changes
+ * <div data-miu-on="users.active:handleUserChange">...</div>
+ *
+ * // Multiple bindings
+ * <button data-miu-on="click:handleClick
+                        mouseenter:handleHover
+                        users.count:handleCountChange">
+ *   Click me
+ * </button>
+ */
 function setupEventHandlers(root) {
   for (const el of root.querySelectorAll(`[${ATTRS.ON}]`)) {
     const attrStr = el.getAttribute(ATTRS.ON);
     const attrs = parseOnAttr(attrStr);
 
     for (const attr of attrs) {
-      addEventHandler(el, attr.eventName, (event) => {
-        event.preventDefault();
-        const bindCtx = getBindContext(el);
-        attr.fn.call(attr.store, event, bindCtx);
-      });
+      if (attr.type === 'event') {
+        addEventHandler(el, attr.eventName, (event) => {
+          event.preventDefault();
+          const bindCtx = getBindContext(el);
+          attr.fn.call(attr.store, event, bindCtx);
+        });
+      } else {
+        storeSubscribe(el, attr.triggerPath, () => {
+          return attr.triggerStore.$subscribe(attr.triggerPath, (value) => {
+            const event = new CustomEvent('store:change', {
+              detail: { path: attr.triggerPath }
+            });
+            const bindCtx = getBindContext(el);
+            attr.fn.call(attr.store, event, value, bindCtx);
+          });
+        });
+      }
     }
   }
 }
