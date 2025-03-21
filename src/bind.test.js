@@ -420,6 +420,36 @@ describe('for', () => {
     expect(secondUserContacts.length).toBe(1);
     expect(secondUserContacts[0].textContent).toBe('email:jane@test.com');
   });
+
+  test('throws on missing template', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      value: []
+    });
+
+    document.body.innerHTML = `
+      <div data-miu-for="${storeName}.value"></div>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow('data-miu-for requires a template element');
+  });
+
+  test('throws on non-iterable value', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      value: 42
+    });
+
+    document.body.innerHTML = `
+      <div data-miu-for="${storeName}.value">
+        <template></template>
+      </div>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`Value of ${storeName}.value is not iterable`);
+  });
 });
 
 describe('on', () => {

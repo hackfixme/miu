@@ -354,9 +354,6 @@ const getIndexedIterator = (items, path) => {
   if (items == null) {
     throw new Error(`Value of ${path} is null or undefined`);
   }
-  if (!Symbol.iterator in Object(items)) {
-    throw new Error(`Value of ${path} is not iterable`);
-  }
 
   let index = 0;
 
@@ -385,6 +382,10 @@ const getIndexedIterator = (items, path) => {
         index++;
       }
     }();
+  }
+
+  if (typeof items?.[Symbol.iterator] !== 'function') {
+    throw new Error(`Value of ${path} is not iterable`);
   }
 
   return function* () {
