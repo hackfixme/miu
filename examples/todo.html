@@ -22,8 +22,8 @@
     <ul data-miu-for="todo.tasks">
       <template>
         <li>
-          <input type="checkbox" data-miu-bind="@.done">
-          <span data-miu-bind="@.text"></span>
+          <input type="checkbox" data-miu-bind="$.done">
+          <span data-miu-bind="$.text"></span>
           <button data-miu-on="click:todo.removeTask">×</button>
         </li>
       </template>

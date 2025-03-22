@@ -99,7 +99,7 @@ describe('for', () => {
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
         <template>
-          <li data-miu-bind="@.text"></li>
+          <li data-miu-bind="$.text"></li>
         </template>
       </ul>
     `;
@@ -138,7 +138,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <span data-miu-bind="@.text"></span>
+            <span data-miu-bind="$.text"></span>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -181,7 +181,7 @@ describe('for', () => {
 
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
-        <template><li><span data-miu-bind="@.id"></span>:<span data-miu-bind="@.text"></span></li></template>
+        <template><li><span data-miu-bind="$.id"></span>:<span data-miu-bind="$.text"></span></li></template>
       </ul>
     `;
     bind(document.body, [store]);
@@ -220,7 +220,7 @@ describe('for', () => {
 
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
-        <template><li><span data-miu-bind="@.value"></span>:<span data-miu-bind="@.computed"></span></li></template>
+        <template><li><span data-miu-bind="$.value"></span>:<span data-miu-bind="$.computed"></span></li></template>
       </ul>
     `;
     bind(document.body, [store]);
@@ -251,7 +251,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <input type="text" data-miu-bind="@.text">
+            <input type="text" data-miu-bind="$.text">
           </li>
         </template>
       </ul>
@@ -288,7 +288,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <div><span data-miu-bind="@key"></span>:<span data-miu-bind="@value.text"></span></div>
+            <div><span data-miu-bind="$key"></span>:<span data-miu-bind="$value.text"></span></div>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -336,7 +336,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <div><span data-miu-bind="@key"></span>:<span data-miu-bind="@value.text"></span></div>
+            <div><span data-miu-bind="$key"></span>:<span data-miu-bind="$value.text"></span></div>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -392,10 +392,10 @@ describe('for', () => {
       <div data-miu-for="${storeName}.users">
         <template>
           <div class="user">
-            <h3 data-miu-bind="@.name"></h3>
-            <ul data-miu-for="@.contacts">
+            <h3 data-miu-bind="$.name"></h3>
+            <ul data-miu-for="$.contacts">
               <template>
-                <li><span data-miu-bind="@.type"></span>:<span data-miu-bind="@.value"></span></li>
+                <li><span data-miu-bind="$.type"></span>:<span data-miu-bind="$.value"></span></li>
               </template>
             </ul>
           </div>

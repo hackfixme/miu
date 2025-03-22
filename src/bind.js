@@ -8,7 +8,7 @@ const ATTRS = {
   ON:    'data-miu-on',
 };
 
-const SEL = '@';
+const SEL = '$';
 const KEY = `${SEL}key`;
 const VALUE = `${SEL}value`;
 const INDEX = `${SEL}index`;
@@ -78,10 +78,10 @@ function getBindContext(element) {
 
 // Parse a bind or for element attribute. It is expected to be in one of these formats:
 // - "<store name>.<store path>" for data binding.
-// - "@[.<store path>]" for referencing array elements within a for loop.
-// - "@key" for referencing object keys within a for loop.
-// - "@value[.<store path>]" for referencing object values within a for loop.
-// - "@index" for referencing the index within a for loop.
+// - "$[.<store path>]" for referencing array elements within a for loop.
+// - "$key" for referencing object keys within a for loop.
+// - "$value[.<store path>]" for referencing object values within a for loop.
+// - "$index" for referencing the index within a for loop.
 function parseBindAttr(el, attr) {
   const attrVal = el.getAttribute(attr);
 
