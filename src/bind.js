@@ -99,7 +99,7 @@ function parseBindAttr(el) {
   const attrVal = el.getAttribute(ATTRS.BIND);
   const [target, storePath] = attrVal.split(':', 2);
   if (!target || !storePath) {
-    throw new Error(`Invalid bind attribute format: ${attrVal}`);
+    throw new Error(`[miu] Invalid bind attribute format: ${attrVal}`);
   }
 
   if (storePath.charAt(0) === SEL) {
@@ -140,7 +140,7 @@ function parseForAttr(el) {
 function resolveStoreRef(attr, ref, bindCtx) {
   // TODO: Make sure that Symbol keys are supported.
   if (typeof bindCtx === 'undefined') {
-    throw new Error(`bind context is undefined for ${ref}`);
+    throw new Error(`[miu] bind context is undefined for ${ref}`);
   }
 
   // The store implementation simplifies the path syntax here.
@@ -152,7 +152,7 @@ function resolveStoreRef(attr, ref, bindCtx) {
 
   if (ref === KEY || ref === INDEX) {
     if (attr === ATTRS.FOR) {
-      throw new Error(`${ref} is unsupported for ${ATTRS.FOR}`);
+      throw new Error(`[miu] ${ref} is unsupported for ${ATTRS.FOR}`);
     }
     return {
       store: bindCtx.store,
@@ -175,18 +175,18 @@ function resolveStoreRef(attr, ref, bindCtx) {
     };
   }
 
-  throw new Error(`Invalid store reference: ${ref}`);
+  throw new Error(`[miu] Invalid store reference: ${ref}`);
 }
 
 function getStoreAndPath(storePath) {
   const [storeName, path] = storePath.split('.', 2);
   if (!storeName || !path) {
-    throw new Error(`Invalid path format: ${storePath}`);
+    throw new Error(`[miu] Invalid path format: ${storePath}`);
   }
 
   const store = stores.get(storeName);
   if (!store) {
-    throw new Error(`Store not found: ${storeName}`);
+    throw new Error(`[miu] Store not found: ${storeName}`);
   }
 
   return { store, path };
@@ -196,7 +196,7 @@ function parseOnAttr(attrStr) {
   const parseAttrPart = (attr) => {
     const parts = attr.split(':');
     if (!attr || parts.length !== 2 || !parts[0] || !parts[1]) {
-      throw new Error(`Invalid on attribute format: ${attr}`);
+      throw new Error(`[miu] Invalid on attribute format: ${attr}`);
     }
 
     const [trigger, fnRef] = parts;
@@ -212,7 +212,7 @@ function parseOnAttr(attrStr) {
     }
 
     if (typeof fn !== 'function') {
-      throw new Error(`${fnRef} is not a function`);
+      throw new Error(`[miu] ${fnRef} is not a function`);
     }
 
     const result = store ? { fn, store } : { fn };
@@ -391,7 +391,7 @@ function bindText(element, store, path, value) {
  */
 const getIndexedIterator = (items, path) => {
   if (items == null) {
-    throw new Error(`Value of ${path} is null or undefined`);
+    throw new Error(`[miu] Value of ${path} is null or undefined`);
   }
 
   let index = 0;
@@ -424,7 +424,7 @@ const getIndexedIterator = (items, path) => {
   }
 
   if (typeof items?.[Symbol.iterator] !== 'function') {
-    throw new Error(`Value of ${path} is not iterable`);
+    throw new Error(`[miu] Value of ${path} is not iterable`);
   }
 
   return function* () {
@@ -443,7 +443,7 @@ function bindForEach(element, store, path) {
   if (!(template instanceof HTMLTemplateElement)) {
     // TODO: Maybe loosen this restriction? It should be possible to loop over
     // an array without filling a template.
-    throw new Error(`${ATTRS.FOR} requires a template element`);
+    throw new Error(`[miu] ${ATTRS.FOR} requires a template element`);
   }
 
   // TODO: Warn if the template includes more than one element.
@@ -506,11 +506,11 @@ function bindForEach(element, store, path) {
 // CSS selector or an HTMLElement.
 function bind(element, newStores) {
   const el = typeof element === 'string' ? document.querySelector(element) : element;
-  if (!el) throw new Error('Element not found');
+  if (!el) throw new Error('[miu] Element not found');
 
   for (const store of newStores) {
     if (stores.has(store.$name)) {
-      throw new Error(`Store with name "${store.$name}" already exists`);
+      throw new Error(`[miu] Store with name "${store.$name}" already exists`);
     }
     stores.set(store.$name, store);
   }

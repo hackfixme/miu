@@ -45,7 +45,7 @@ class Store {
    */
   constructor(name, initialState = {}) {
     if (typeof name !== 'string') {
-      throw new Error('Store name must be a string');
+      throw new Error('[miu] Store name must be a string');
     }
 
     const listeners = new Map();
@@ -63,7 +63,7 @@ class Store {
       },
       set: (_, prop, value) => {
         if (prop.toString().startsWith('$')) {
-          throw new Error(`'${prop}' is read-only`);
+          throw new Error(`[miu] '${prop}' is read-only`);
         }
         state[prop] = value;
         return true;
@@ -125,7 +125,7 @@ class Store {
    */
   _validatePath(path) {
     if (typeof path === 'undefined') {
-      throw new Error('path is undefined');
+      throw new Error('[miu] path is undefined');
     }
     if (path === '') return;     // Allow empty path for root listeners
 
@@ -142,7 +142,7 @@ class Store {
     const pathRegex = new RegExp(parts.join(''));
 
     if (!pathRegex.test(path)) {
-      throw new Error('Invalid path syntax');
+      throw new Error('[miu] Invalid path syntax');
     }
   }
 
@@ -240,7 +240,7 @@ class Store {
     const handleArraySet = (target, prop, value, path) => {
       const index = parseInt(prop, 10);
       if (isNaN(index) || index < 0 || index > target.length-1) {
-        throw new Error(`Invalid array index: ${prop}`);
+        throw new Error(`[miu] Invalid array index: ${prop}`);
       }
 
       target[prop] = value;
