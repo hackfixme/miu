@@ -6,89 +6,34 @@ import { Store } from './store.js';
 import { deepCopy } from './util.js';
 
 describe('bind', () => {
-  test('text input binds to string store value', () => {
+  test('text elements bind to store value - one-way', () => {
     const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, { value: 'initial' });
-
-    document.body.innerHTML = `
-      <input type="text" data-miu-bind="value:${storeName}.value">
-    `;
-    bind(document.body, [store]);
-
-    const input = document.querySelector('input');
-    expect(input.value).toBe('initial');
-
-    // Store updates element
-    store.value = 'store update';
-    expect(input.value).toBe('store update');
-
-    // Element updates store
-    input.value = 'element update';
-    input.dispatchEvent(new Event('input'));
-    expect(store.value).toBe('element update');
-  });
-
-  test('number input binds to numeric store value', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, { value: 42 });
-
-    document.body.innerHTML = `
-      <input type="number" data-miu-bind="value:${storeName}.value">
-    `;
-    bind(document.body, [store]);
-
-    const input = document.querySelector('input');
-    expect(input.value).toBe('42');
-
-    store.value = 100;
-    expect(input.value).toBe('100');
-
-    input.value = '200';
-    input.dispatchEvent(new Event('input'));
-    expect(store.value).toBe('200'); // Note: Will be string unless explicitly converted
-  });
-
-  test('checkbox input binds to boolean store value', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, { checked: true });
-
-    document.body.innerHTML = `
-      <input type="checkbox" data-miu-bind="checked:${storeName}.checked">
-    `;
-    bind(document.body, [store]);
-
-    const checkbox = document.querySelector('input');
-    expect(checkbox.checked).toBe(true);
-
-    store.checked = false;
-    expect(checkbox.checked).toBe(false);
-
-    checkbox.checked = true;
-    checkbox.dispatchEvent(new Event('change'));
-    expect(store.checked).toBe(true);
-  });
-
-  test('text elements bind to store value', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, { text: 'initial' });
+    const store = new Store(storeName, {
+      text: 'initial',
+      text2: 'another'
+    });
 
     document.body.innerHTML = `
       <div data-miu-bind="text:${storeName}.text"></div>
       <span data-miu-bind="text:${storeName}.text"></span>
+      <p data-miu-bind="text:${storeName}.text2"></p>
     `;
     bind(document.body, [store]);
 
     const div = document.querySelector('div');
     const span = document.querySelector('span');
+    const p = document.querySelector('p');
     expect(div.textContent).toBe('initial');
     expect(span.textContent).toBe('initial');
+    expect(p.textContent).toBe('another');
 
     store.text = 'updated';
     expect(div.textContent).toBe('updated');
     expect(span.textContent).toBe('updated');
+    expect(p.textContent).toBe('another');
   });
 
-  test('binds to arbitrary attributes on regular elements', () => {
+  test('binds to arbitrary attributes on regular elements - one-way', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { cls: 'initial' });
 
@@ -105,7 +50,7 @@ describe('bind', () => {
     expect(div.getAttribute('class')).toBe('store-update');
   });
 
-  test('binds to arbitrary attributes on input elements', () => {
+  test('binds to arbitrary attributes on input elements - one-way', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { cls: 'initial' });
 
@@ -120,6 +65,68 @@ describe('bind', () => {
     // Store updates element
     store.cls = 'store-update';
     expect(input.getAttribute('class')).toBe('store-update');
+  });
+
+  test('text input binds to string store value - two-way', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 'initial' });
+
+    document.body.innerHTML = `
+      <input type="text" data-miu-bind="value:${storeName}.value:on(input)">
+    `;
+    bind(document.body, [store]);
+
+    const input = document.querySelector('input');
+    expect(input.value).toBe('initial');
+
+    // Store updates element
+    store.value = 'store update';
+    expect(input.value).toBe('store update');
+
+    // Element updates store
+    input.value = 'element update';
+    input.dispatchEvent(new Event('input'));
+    expect(store.value).toBe('element update');
+  });
+
+  test('number input binds to numeric store value - two-way', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 42 });
+
+    document.body.innerHTML = `
+      <input type="number" data-miu-bind="value:${storeName}.value:on(input)">
+    `;
+    bind(document.body, [store]);
+
+    const input = document.querySelector('input');
+    expect(input.value).toBe('42');
+
+    store.value = 100;
+    expect(input.value).toBe('100');
+
+    input.value = '200';
+    input.dispatchEvent(new Event('input'));
+    expect(store.value).toBe('200'); // Note: Will be string unless explicitly converted
+  });
+
+  test('checkbox input binds to boolean store value - two-way', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { checked: true });
+
+    document.body.innerHTML = `
+      <input type="checkbox" data-miu-bind="checked:${storeName}.checked:on(change)">
+    `;
+    bind(document.body, [store]);
+
+    const checkbox = document.querySelector('input');
+    expect(checkbox.checked).toBe(true);
+
+    store.checked = false;
+    expect(checkbox.checked).toBe(false);
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(store.checked).toBe(true);
   });
 
   test('throws on invalid attribute format', () => {
@@ -299,7 +306,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <input type="text" data-miu-bind="value:$.text">
+            <input type="text" data-miu-bind="value:$.text:on(input)">
           </li>
         </template>
       </ul>

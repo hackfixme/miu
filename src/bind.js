@@ -46,8 +46,8 @@ function setupBindings(root) {
       ...root.querySelectorAll(bindSelector)
   ];
   for (const el of bindElements) {
-    const {target, store, path, key} = parseBindAttr(el);
-    bindElement(el, target, store, path, key);
+    const {target, store, path, key, event} = parseBindAttr(el);
+    bindElement(el, target, store, path, key, event);
   };
 }
 
@@ -97,19 +97,37 @@ function getBindContext(element) {
  */
 function parseBindAttr(el) {
   const attrVal = el.getAttribute(ATTRS.BIND);
-  const [target, storePath] = attrVal.split(':', 2);
+  const parts = attrVal.split(':');
+
+  if (parts.length < 2 || parts.length > 3) {
+    throw new Error(`[miu] Invalid bind attribute format: ${attrVal}`);
+  }
+
+  const [target, storePath] = parts;
   if (!target || !storePath) {
     throw new Error(`[miu] Invalid bind attribute format: ${attrVal}`);
+  }
+
+  let event;
+  if (parts.length === 3) {
+    const eventSpec = parts[2];
+    if (!eventSpec.startsWith('on(') || !eventSpec.endsWith(')')) {
+      throw new Error(`[miu] Invalid event format: ${eventSpec}`);
+    }
+    event = eventSpec.slice(3, -1);
+    if (!event) {
+      throw new Error(`[miu] Empty event name in: ${eventSpec}`);
+    }
   }
 
   if (storePath.charAt(0) === SEL) {
     const bindCtx = getBindContext(el);
     const resolved = resolveStoreRef(ATTRS.BIND, storePath, bindCtx);
-    return { target, ...resolved };
+    return { target, event, ...resolved };
   }
 
   const { store, path } = getStoreAndPath(storePath);
-  return { target, store, path };
+  return { target, store, path, event };
 }
 
 /**
@@ -308,7 +326,7 @@ function storeSubscribe(element, path, subFn) {
 }
 
 // Bind an element to the store value at path.
-function bindElement(element, target, store, path, key) {
+function bindElement(element, target, store, path, key, event) {
   let value = null;
   if (key) {
     value = key;
@@ -323,12 +341,12 @@ function bindElement(element, target, store, path, key) {
   if (target === 'text') {
     bindText(element, store, path, value);
   } else {
-    bindAttribute(element, store, path, target, value);
+    bindAttribute(element, store, path, target, value, event);
   }
 }
 
 // Bind any element's attribute to the store value at path.
-function bindAttribute(element, store, path, attr, value) {
+function bindAttribute(element, store, path, attr, value, event) {
   // These attributes represent element state and should use properties
   const useProperty = element.tagName === 'INPUT' &&
     (attr === 'value' || attr === 'checked');
@@ -346,10 +364,11 @@ function bindAttribute(element, store, path, attr, value) {
     });
 
     // Setup two-way binding
-    const event = attr === 'checked' ? 'change' : 'input';
-    addEventHandler(element, event, (e) => {
-      store.$set(path, e.target[attr]);
-    });
+    if (event) {
+      addEventHandler(element, event, (e) => {
+        store.$set(path, e.target[attr]);
+      });
+    }
   } else {
     // All other cases use attributes
     if (element.getAttribute(attr) !== value) {
@@ -362,6 +381,13 @@ function bindAttribute(element, store, path, attr, value) {
         }
       });
     });
+
+    // Setup two-way binding
+    if (event) {
+      addEventHandler(element, event, (e) => {
+        store.$set(path, e.target.getAttribute(attr));
+      });
+    }
   }
 }
 
