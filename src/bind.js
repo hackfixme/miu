@@ -35,7 +35,7 @@ function setupBindings(root) {
       ...root.querySelectorAll(forSelector)
   ];
   for (const el of forElements) {
-    const {store, path} = parseBindAttr(el, ATTRS.FOR);
+    const {store, path} = parseForAttr(el);
     bindForEach(el, store, path);
   };
 
@@ -46,8 +46,8 @@ function setupBindings(root) {
       ...root.querySelectorAll(bindSelector)
   ];
   for (const el of bindElements) {
-    const {store, path, key} = parseBindAttr(el, ATTRS.BIND);
-    bindElement(el, store, path, key);
+    const {target, store, path, key} = parseBindAttr(el);
+    bindElement(el, target, store, path, key);
   };
 }
 
@@ -76,19 +76,62 @@ function getBindContext(element) {
   return context;
 }
 
-// Parse a bind or for element attribute. It is expected to be in one of these formats:
-// - "<store name>.<store path>" for data binding.
-// - "$[.<store path>]" for referencing array elements within a for loop.
-// - "$key" for referencing object keys within a for loop.
-// - "$value[.<store path>]" for referencing object values within a for loop.
-// - "$index" for referencing the index within a for loop.
-function parseBindAttr(el, attr) {
-  const attrVal = el.getAttribute(attr);
+/**
+ * Parse a bind attribute in the format "target:storePath" where:
+ * - target: 'text' for textContent binding, or any valid attribute name
+ * - storePath: One of:
+ *   - "<store name>.<store path>" for data binding
+ *   - "$[.<store path>]" for referencing array elements within a for loop
+ *   - "$key" for referencing object keys within a for loop
+ *   - "$value[.<store path>]" for referencing object values within a for loop
+ *   - "$index" for referencing the index within a for loop
+ *
+ * @param {HTMLElement} el - Element with the binding attribute
+ * @returns {{
+ *   target: string,
+ *   store: Store,
+ *   path: string,
+ *   key?: string
+ * }}
+ * @throws {Error} If the binding format is invalid or store is not found
+ */
+function parseBindAttr(el) {
+  const attrVal = el.getAttribute(ATTRS.BIND);
+  const [target, storePath] = attrVal.split(':', 2);
+  if (!target || !storePath) {
+    throw new Error(`Invalid bind attribute format: ${attrVal}`);
+  }
+
+  if (storePath.charAt(0) === SEL) {
+    const bindCtx = getBindContext(el);
+    const resolved = resolveStoreRef(ATTRS.BIND, storePath, bindCtx);
+    return { target, ...resolved };
+  }
+
+  const { store, path } = getStoreAndPath(storePath);
+  return { target, store, path };
+}
+
+/**
+ * Parse a for attribute resolving any inner loop references.
+ * The path can be either:
+ * - "<store name>.<store path>" for direct store value references
+ * - "$[.<store path>]" for referencing array elements within a for loop
+ * - "$value[.<store path>]" for referencing object values within a for loop
+ *
+ * @param {HTMLElement} el - Element with the for attribute
+ * @returns {{
+ *   store: Store,
+ *   path: string
+ * }}
+ * @throws {Error} If the path format is invalid or store is not found
+ */
+function parseForAttr(el) {
+  const attrVal = el.getAttribute(ATTRS.FOR);
 
   if (attrVal.charAt(0) === SEL) {
-    // Inner loop notation
     const bindCtx = getBindContext(el);
-    return resolveStoreRef(attr, attrVal, bindCtx);
+    return resolveStoreRef(ATTRS.FOR, attrVal, bindCtx);
   }
 
   return getStoreAndPath(attrVal);
@@ -153,7 +196,7 @@ function parseOnAttr(attrStr) {
   const parseAttrPart = (attr) => {
     const parts = attr.split(':');
     if (!attr || parts.length !== 2 || !parts[0] || !parts[1]) {
-      throw new Error(`Invalid attribute format: ${attr}`);
+      throw new Error(`Invalid on attribute format: ${attr}`);
     }
 
     const [trigger, fnRef] = parts;
@@ -265,7 +308,7 @@ function storeSubscribe(element, path, subFn) {
 }
 
 // Bind an element to the store value at path.
-function bindElement(element, store, path, key) {
+function bindElement(element, target, store, path, key) {
   let value = null;
   if (key) {
     value = key;
@@ -277,53 +320,49 @@ function bindElement(element, store, path, key) {
     }
   }
 
-  if (element.tagName === 'INPUT') {
-    if (element.type === 'checkbox') {
-      bindCheckbox(element, store, path, value);
-    } else {
-      bindInput(element, store, path, value);
-    }
-  } else {
+  if (target === 'text') {
     bindText(element, store, path, value);
+  } else {
+    bindAttribute(element, store, path, target, value);
   }
 }
 
-// Bind an input element to the store value at path.
-function bindInput(element, store, path, value) {
-  if (element.value !== value) {
-    element.value = value;
-  }
-  addEventHandler(element, 'input', (e) => {
-    store.$set(path, e.target.value);
-  });
-  storeSubscribe(element, path, () => {
-    return store.$subscribe(path, (value) => {
-      if (element.value !== value) {
-        element.value = value;
-      }
-    });
-  });
-}
+// Bind any element's attribute to the store value at path.
+function bindAttribute(element, store, path, attr, value) {
+  // These attributes represent element state and should use properties
+  const useProperty = element.tagName === 'INPUT' &&
+    (attr === 'value' || attr === 'checked');
 
-// Bind a checkbox element to the store value at path.
-function bindCheckbox(element, store, path, value) {
-  if (typeof value !== 'boolean') {
-    console.warn(`Ignoring non-boolean value "${value}" for checkbox element`);
-    return;
-  }
-  if (element.checked !== value) {
-    element.checked = value;
-  }
-  addEventHandler(element, 'change', (e) => {
-    store.$set(path, e.target.checked);
-  });
-  storeSubscribe(element, path, () => {
-    return store.$subscribe(path, (value) => {
-      if (element.checked !== value) {
-        element.checked = value;
-      }
+  if (useProperty) {
+    if (element[attr] !== value) {
+      element[attr] = value;
+    }
+    storeSubscribe(element, path, () => {
+      return store.$subscribe(path, (value) => {
+        if (element[attr] !== value) {
+          element[attr] = value;
+        }
+      });
     });
-  });
+
+    // Setup two-way binding
+    const event = attr === 'checked' ? 'change' : 'input';
+    addEventHandler(element, event, (e) => {
+      store.$set(path, e.target[attr]);
+    });
+  } else {
+    // All other cases use attributes
+    if (element.getAttribute(attr) !== value) {
+      element.setAttribute(attr, value);
+    }
+    storeSubscribe(element, path, () => {
+      return store.$subscribe(path, (value) => {
+        if (element.getAttribute(attr) !== value) {
+          element.setAttribute(attr, value);
+        }
+      });
+    });
+  }
 }
 
 // Bind any element's textContent to the store value at path.

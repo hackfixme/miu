@@ -11,7 +11,7 @@ describe('bind', () => {
     const store = new Store(storeName, { value: 'initial' });
 
     document.body.innerHTML = `
-      <input type="text" data-miu-bind="${storeName}.value">
+      <input type="text" data-miu-bind="value:${storeName}.value">
     `;
     bind(document.body, [store]);
 
@@ -33,7 +33,7 @@ describe('bind', () => {
     const store = new Store(storeName, { value: 42 });
 
     document.body.innerHTML = `
-      <input type="number" data-miu-bind="${storeName}.value">
+      <input type="number" data-miu-bind="value:${storeName}.value">
     `;
     bind(document.body, [store]);
 
@@ -53,7 +53,7 @@ describe('bind', () => {
     const store = new Store(storeName, { checked: true });
 
     document.body.innerHTML = `
-      <input type="checkbox" data-miu-bind="${storeName}.checked">
+      <input type="checkbox" data-miu-bind="checked:${storeName}.checked">
     `;
     bind(document.body, [store]);
 
@@ -73,8 +73,8 @@ describe('bind', () => {
     const store = new Store(storeName, { text: 'initial' });
 
     document.body.innerHTML = `
-      <div data-miu-bind="${storeName}.text"></div>
-      <span data-miu-bind="${storeName}.text"></span>
+      <div data-miu-bind="text:${storeName}.text"></div>
+      <span data-miu-bind="text:${storeName}.text"></span>
     `;
     bind(document.body, [store]);
 
@@ -87,6 +87,54 @@ describe('bind', () => {
     expect(div.textContent).toBe('updated');
     expect(span.textContent).toBe('updated');
   });
+
+  test('binds to arbitrary attributes on regular elements', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { cls: 'initial' });
+
+    document.body.innerHTML = `
+      <div data-miu-bind="class:${storeName}.cls"></div>
+    `;
+    bind(document.body, [store]);
+
+    const div = document.querySelector('div');
+    expect(div.getAttribute('class')).toBe('initial');
+
+    // Store updates element
+    store.cls = 'store-update';
+    expect(div.getAttribute('class')).toBe('store-update');
+  });
+
+  test('binds to arbitrary attributes on input elements', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { cls: 'initial' });
+
+    document.body.innerHTML = `
+      <input type="text" data-miu-bind="class:${storeName}.cls">
+    `;
+    bind(document.body, [store]);
+
+    const input = document.querySelector('input');
+    expect(input.getAttribute('class')).toBe('initial');
+
+    // Store updates element
+    store.cls = 'store-update';
+    expect(input.getAttribute('class')).toBe('store-update');
+  });
+
+  test('throws on invalid attribute format', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 42 });
+
+    // Missing bind target
+    document.body.innerHTML = `
+      <button data-miu-bind="${storeName}.value">Test</button>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`Invalid bind attribute format: ${storeName}.value`);
+  });
+
 });
 
 describe('for', () => {
@@ -99,7 +147,7 @@ describe('for', () => {
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
         <template>
-          <li data-miu-bind="$.text"></li>
+          <li data-miu-bind="text:$.text"></li>
         </template>
       </ul>
     `;
@@ -138,7 +186,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <span data-miu-bind="$.text"></span>
+            <span data-miu-bind="text:$.text"></span>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -181,7 +229,7 @@ describe('for', () => {
 
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
-        <template><li><span data-miu-bind="$.id"></span>:<span data-miu-bind="$.text"></span></li></template>
+        <template><li><span data-miu-bind="text:$.id"></span>:<span data-miu-bind="text:$.text"></span></li></template>
       </ul>
     `;
     bind(document.body, [store]);
@@ -220,7 +268,7 @@ describe('for', () => {
 
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
-        <template><li><span data-miu-bind="$.value"></span>:<span data-miu-bind="$.computed"></span></li></template>
+        <template><li><span data-miu-bind="text:$.value"></span>:<span data-miu-bind="text:$.computed"></span></li></template>
       </ul>
     `;
     bind(document.body, [store]);
@@ -251,7 +299,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <input type="text" data-miu-bind="$.text">
+            <input type="text" data-miu-bind="value:$.text">
           </li>
         </template>
       </ul>
@@ -288,7 +336,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <div><span data-miu-bind="$key"></span>:<span data-miu-bind="$value.text"></span></div>
+            <div><span data-miu-bind="text:$key"></span>:<span data-miu-bind="text:$value.text"></span></div>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -336,7 +384,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <div><span data-miu-bind="$key"></span>:<span data-miu-bind="$value.text"></span></div>
+            <div><span data-miu-bind="text:$key"></span>:<span data-miu-bind="text:$value.text"></span></div>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -392,10 +440,10 @@ describe('for', () => {
       <div data-miu-for="${storeName}.users">
         <template>
           <div class="user">
-            <h3 data-miu-bind="$.name"></h3>
+            <h3 data-miu-bind="text:$.name"></h3>
             <ul data-miu-for="$.contacts">
               <template>
-                <li><span data-miu-bind="$.type"></span>:<span data-miu-bind="$.value"></span></li>
+                <li><span data-miu-bind="text:$.type"></span>:<span data-miu-bind="text:$.value"></span></li>
               </template>
             </ul>
           </div>
@@ -599,6 +647,30 @@ describe('on', () => {
     expect(store.mouseoverCount).toBe(1);
   });
 
+  test('handles store path triggers', () => {
+    const storeName = `test-${randomString()}`;
+    const handler = vi.fn();
+    const store = new Store(storeName, {
+      count: 0,
+      handler
+    });
+
+    document.body.innerHTML = `
+      <button data-miu-on="${storeName}.count:${storeName}.handler">Test</button>
+    `;
+    bind(document.body, [store]);
+
+    store.count = 1;
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    const [[event, value, bindCtx]] = handler.mock.calls;
+    expect(event).toBeInstanceOf(CustomEvent);
+    expect(event.type).toBe('store:change');
+    expect(event.detail).toEqual({ path: 'count' });
+    expect(value).toBe(1);
+    expect(bindCtx).toBeUndefined();
+  });
+
   test('throws on invalid event format', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {});
@@ -608,7 +680,7 @@ describe('on', () => {
     `;
 
     expect(() => bind(document.body, [store]))
-      .toThrow('Invalid attribute format: click:store:func');
+      .toThrow('Invalid on attribute format: click:store:func');
   });
 
   test('throws when store handler reference is not a function', () => {
@@ -637,31 +709,6 @@ describe('on', () => {
 
     delete globalThis.notAFunction;
   });
-
-  test('handles store path triggers', () => {
-    const storeName = `test-${randomString()}`;
-    const handler = vi.fn();
-    const store = new Store(storeName, {
-      count: 0,
-      handler
-    });
-
-    document.body.innerHTML = `
-      <button data-miu-on="${storeName}.count:${storeName}.handler">Test</button>
-    `;
-    bind(document.body, [store]);
-
-    store.count = 1;
-
-    expect(handler).toHaveBeenCalledTimes(1);
-    const [[event, value, bindCtx]] = handler.mock.calls;
-    expect(event).toBeInstanceOf(CustomEvent);
-    expect(event.type).toBe('store:change');
-    expect(event.detail).toEqual({ path: 'count' });
-    expect(value).toBe(1);
-    expect(bindCtx).toBeUndefined();
-  });
-
 });
 
 function randomString() {
