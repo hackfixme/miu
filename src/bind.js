@@ -46,8 +46,8 @@ function setupBindings(root) {
       ...root.querySelectorAll(bindSelector)
   ];
   for (const el of bindElements) {
-    const {target, store, path, key, event} = parseBindAttr(el);
-    bindElement(el, target, store, path, key, event);
+    const bindConfig = parseBindAttr(el);
+    bindElement(el, bindConfig);
   };
 }
 
@@ -77,57 +77,68 @@ function getBindContext(element) {
 }
 
 /**
- * Parse a bind attribute in the format "target:storePath" where:
- * - target: 'text' for textContent binding, or any valid attribute name
- * - storePath: One of:
- *   - "<store name>.<store path>" for data binding
- *   - "$[.<store path>]" for referencing array elements within a for loop
- *   - "$key" for referencing object keys within a for loop
- *   - "$value[.<store path>]" for referencing object values within a for loop
- *   - "$index" for referencing the index within a for loop
+ * Parse a bind attribute in the format "storePath->target" for one-way binding
+ * or "storePath<->target@event" for two-way binding, where:
+ * - storePath: "<store name>.<path>" or "$[.<path>]" for loop references
+ * - target: 'text' for textContent binding, or any valid attribute/property name of the element
+ * - event: Required for two-way binding, the DOM event that triggers updates to the store
  *
  * @param {HTMLElement} el - Element with the binding attribute
  * @returns {{
- *   target: string,
  *   store: Store,
  *   path: string,
+ *   target: string,
+ *   twoWay: boolean,
+ *   event?: string,
  *   key?: string
  * }}
  * @throws {Error} If the binding format is invalid or store is not found
  */
 function parseBindAttr(el) {
   const attrVal = el.getAttribute(ATTRS.BIND);
-  const parts = attrVal.split(':');
 
-  if (parts.length < 2 || parts.length > 3) {
-    throw new Error(`[miu] Invalid bind attribute format: ${attrVal}`);
+  // Match either -> or <-> with groups for left/right sides
+  const match = attrVal.match(/^(.+?)(->|<->)(.+)$/);
+  if (!match) {
+    throw new Error(`[miu] Invalid bind syntax: ${attrVal}. Expected: storePath->target or storePath<->target@event`);
   }
 
-  const [target, storePath] = parts;
-  if (!target || !storePath) {
-    throw new Error(`[miu] Invalid bind attribute format: ${attrVal}`);
-  }
+  const [, storePath, arrow, rightSide] = match;
+  const twoWay = arrow === '<->';
 
-  let event;
-  if (parts.length === 3) {
-    const eventSpec = parts[2];
-    if (!eventSpec.startsWith('on(') || !eventSpec.endsWith(')')) {
-      throw new Error(`[miu] Invalid event format: ${eventSpec}`);
+  // Parse right side for target and optional event
+  let target, event;
+  if (twoWay) {
+    const parts = rightSide.split('@');
+    if (parts.length !== 2) {
+      throw new Error(`[miu] Two-way binding requires @event: ${attrVal}`);
     }
-    event = eventSpec.slice(3, -1);
-    if (!event) {
-      throw new Error(`[miu] Empty event name in: ${eventSpec}`);
+    [target, event] = parts;
+    if (!target || !event) {
+      throw new Error(`[miu] Two-way binding requires both target and event: ${attrVal}`);
     }
+  } else {
+    if (rightSide.includes('@')) {
+      throw new Error(`[miu] One-way binding should not specify @event: ${attrVal}`);
+    }
+    target = rightSide;
   }
 
+  // Resolve store reference (either direct store path or inner loop reference)
+  let storeAndPath;
   if (storePath.charAt(0) === SEL) {
     const bindCtx = getBindContext(el);
-    const resolved = resolveStoreRef(ATTRS.BIND, storePath, bindCtx);
-    return { target, event, ...resolved };
+    storeAndPath = resolveStoreRef(ATTRS.BIND, storePath, bindCtx);
+  } else {
+    storeAndPath = getStoreAndPath(storePath);
   }
 
-  const { store, path } = getStoreAndPath(storePath);
-  return { target, store, path, event };
+  return {
+    ...storeAndPath,
+    target,
+    twoWay,
+    event,
+  };
 }
 
 /**
@@ -325,79 +336,102 @@ function storeSubscribe(element, path, subFn) {
   }
 }
 
-// Bind an element to the store value at path.
-function bindElement(element, target, store, path, key, event) {
-  let value = null;
-  if (key) {
-    value = key;
-  } else {
-    value = store.$get(path);
-    if (typeof value === 'function') {
-      const bindCtx = getBindContext(element);
-      value = value(bindCtx);
-    }
-  }
+/**
+ * Bind an element to a store using the provided binding configuration.
+ * Resolves the current value and sets up one or two-way data binding.
+ *
+ * @param {HTMLElement} element - The DOM element to bind
+ * @param {{
+ *   store: Store,
+ *   path: string,
+ *   target: string,
+ *   twoWay: boolean,
+ *   event?: string,
+ *   key?: string
+ * }} bindConfig - Configuration describing how to bind the element
+ */
+function bindElement(element, bindConfig) {
+  // Get current value from store (or use key for loop bindings)
+  const value = bindConfig.key ?? bindConfig.store.$get(bindConfig.path);
 
-  if (target === 'text') {
-    bindText(element, store, path, value);
+  // Handle computed values (functions)
+  const finalValue = typeof value === 'function'
+    ? value(getBindContext(element))
+    : value;
+
+  if (bindConfig.target === 'text') {
+    bindText(element, bindConfig, finalValue);
   } else {
-    bindAttribute(element, store, path, target, value, event);
+    bindAttribute(element, bindConfig, finalValue);
   }
 }
 
-// Bind any element's attribute to the store value at path.
-function bindAttribute(element, store, path, attr, value, event) {
+/**
+ * Bind a store value change to update an element attribute or property (one-way),
+ * and optionally the element's attribute or property value triggered by
+ * config.event to update the store value (two-way) if config.twoWay is true.
+ * For input elements, uses property binding for 'value' and 'checked'.
+ * For other elements or attributes, uses attribute binding.
+ *
+ * @param {HTMLElement} element - The DOM element to bind
+ * @param {{
+ *   store: Store,
+ *   path: string,
+ *   target: string,
+ *   twoWay: boolean,
+ *   event?: string
+ * }} config - Configuration describing how to bind the element
+ * @param {*} value - The current value to bind
+ */
+function bindAttribute(element, config, value) {
   // These attributes represent element state and should use properties
   const useProperty = element.tagName === 'INPUT' &&
-    (attr === 'value' || attr === 'checked');
+    (config.target === 'value' || config.target === 'checked');
 
   if (useProperty) {
-    if (element[attr] !== value) {
-      element[attr] = value;
+    if (element[config.target] !== value) {
+      element[config.target] = value;
     }
-    storeSubscribe(element, path, () => {
-      return store.$subscribe(path, (value) => {
-        if (element[attr] !== value) {
-          element[attr] = value;
+    storeSubscribe(element, config.path, () => {
+      return config.store.$subscribe(config.path, (value) => {
+        if (element[config.target] !== value) {
+          element[config.target] = value;
         }
       });
     });
 
-    // Setup two-way binding
-    if (event) {
-      addEventHandler(element, event, (e) => {
-        store.$set(path, e.target[attr]);
+    if (config.twoWay) {
+      addEventHandler(element, config.event, (e) => {
+        config.store.$set(config.path, e.target[config.target]);
       });
     }
   } else {
-    // All other cases use attributes
-    if (element.getAttribute(attr) !== value) {
-      element.setAttribute(attr, value);
+    if (element.getAttribute(config.target) !== value) {
+      element.setAttribute(config.target, value);
     }
-    storeSubscribe(element, path, () => {
-      return store.$subscribe(path, (value) => {
-        if (element.getAttribute(attr) !== value) {
-          element.setAttribute(attr, value);
+    storeSubscribe(element, config.path, () => {
+      return config.store.$subscribe(config.path, (value) => {
+        if (element.getAttribute(config.target) !== value) {
+          element.setAttribute(config.target, value);
         }
       });
     });
 
-    // Setup two-way binding
-    if (event) {
-      addEventHandler(element, event, (e) => {
-        store.$set(path, e.target.getAttribute(attr));
+    if (config.twoWay) {
+      addEventHandler(element, config.event, (e) => {
+        config.store.$set(config.path, e.target.getAttribute(config.target));
       });
     }
   }
 }
 
 // Bind any element's textContent to the store value at path.
-function bindText(element, store, path, value) {
+function bindText(element, config, value) {
   if (element.textContent !== value) {
     element.textContent = value;
   }
-  storeSubscribe(element, path, () => {
-    return store.$subscribe(path, (value) => {
+  storeSubscribe(element, config.path, () => {
+    return config.store.$subscribe(config.path, (value) => {
       if (element.textContent !== value) {
         element.textContent = value;
       }

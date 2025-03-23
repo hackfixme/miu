@@ -14,9 +14,9 @@ describe('bind', () => {
     });
 
     document.body.innerHTML = `
-      <div data-miu-bind="text:${storeName}.text"></div>
-      <span data-miu-bind="text:${storeName}.text"></span>
-      <p data-miu-bind="text:${storeName}.text2"></p>
+      <div data-miu-bind="${storeName}.text->text"></div>
+      <span data-miu-bind="${storeName}.text->text"></span>
+      <p data-miu-bind="${storeName}.text2->text"></p>
     `;
     bind(document.body, [store]);
 
@@ -38,7 +38,7 @@ describe('bind', () => {
     const store = new Store(storeName, { cls: 'initial' });
 
     document.body.innerHTML = `
-      <div data-miu-bind="class:${storeName}.cls"></div>
+      <div data-miu-bind="${storeName}.cls->class"></div>
     `;
     bind(document.body, [store]);
 
@@ -55,7 +55,7 @@ describe('bind', () => {
     const store = new Store(storeName, { cls: 'initial' });
 
     document.body.innerHTML = `
-      <input type="text" data-miu-bind="class:${storeName}.cls">
+      <input type="text" data-miu-bind="${storeName}.cls->class">
     `;
     bind(document.body, [store]);
 
@@ -72,7 +72,7 @@ describe('bind', () => {
     const store = new Store(storeName, { value: 'initial' });
 
     document.body.innerHTML = `
-      <input type="text" data-miu-bind="value:${storeName}.value:on(input)">
+      <input type="text" data-miu-bind="${storeName}.value<->value@input">
     `;
     bind(document.body, [store]);
 
@@ -94,7 +94,7 @@ describe('bind', () => {
     const store = new Store(storeName, { value: 42 });
 
     document.body.innerHTML = `
-      <input type="number" data-miu-bind="value:${storeName}.value:on(input)">
+      <input type="number" data-miu-bind="${storeName}.value<->value@input">
     `;
     bind(document.body, [store]);
 
@@ -114,7 +114,7 @@ describe('bind', () => {
     const store = new Store(storeName, { checked: true });
 
     document.body.innerHTML = `
-      <input type="checkbox" data-miu-bind="checked:${storeName}.checked:on(change)">
+      <input type="checkbox" data-miu-bind="${storeName}.checked<->checked@change">
     `;
     bind(document.body, [store]);
 
@@ -129,7 +129,7 @@ describe('bind', () => {
     expect(store.checked).toBe(true);
   });
 
-  test('throws on invalid attribute format', () => {
+  test('throws on invalid bind syntax', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 42 });
 
@@ -139,9 +139,56 @@ describe('bind', () => {
     `;
 
     expect(() => bind(document.body, [store]))
-      .toThrow(`Invalid bind attribute format: ${storeName}.value`);
+      .toThrow(`Invalid bind syntax: ${storeName}.value`);
   });
 
+  test('throws on two-way binding without event', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 'test' });
+
+    document.body.innerHTML = `
+      <input data-miu-bind="${storeName}.value<->value">
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`Two-way binding requires @event: ${storeName}.value<->value`);
+  });
+
+  test('throws on two-way binding with empty event', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 'test' });
+
+    document.body.innerHTML = `
+      <input data-miu-bind="${storeName}.value<->value@">
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`Two-way binding requires both target and event: ${storeName}.value<->value@`);
+  });
+
+  test('throws on two-way binding with empty target', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 'test' });
+
+    document.body.innerHTML = `
+      <input data-miu-bind="${storeName}.value<->@input">
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`Two-way binding requires both target and event: ${storeName}.value<->@input`);
+  });
+
+  test('throws on one-way binding with event', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 'test' });
+
+    document.body.innerHTML = `
+      <input data-miu-bind="${storeName}.value->value@input">
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`One-way binding should not specify @event: ${storeName}.value->value@input`);
+  });
 });
 
 describe('for', () => {
@@ -154,7 +201,7 @@ describe('for', () => {
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
         <template>
-          <li data-miu-bind="text:$.text"></li>
+          <li data-miu-bind="$.text->text"></li>
         </template>
       </ul>
     `;
@@ -193,7 +240,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <span data-miu-bind="text:$.text"></span>
+            <span data-miu-bind="$.text->text"></span>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -236,7 +283,7 @@ describe('for', () => {
 
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
-        <template><li><span data-miu-bind="text:$.id"></span>:<span data-miu-bind="text:$.text"></span></li></template>
+        <template><li><span data-miu-bind="$.id->text"></span>:<span data-miu-bind="$.text->text"></span></li></template>
       </ul>
     `;
     bind(document.body, [store]);
@@ -275,7 +322,7 @@ describe('for', () => {
 
     document.body.innerHTML = `
       <ul data-miu-for="${storeName}.items">
-        <template><li><span data-miu-bind="text:$.value"></span>:<span data-miu-bind="text:$.computed"></span></li></template>
+        <template><li><span data-miu-bind="$.value->text"></span>:<span data-miu-bind="$.computed->text"></span></li></template>
       </ul>
     `;
     bind(document.body, [store]);
@@ -306,7 +353,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <input type="text" data-miu-bind="value:$.text:on(input)">
+            <input type="text" data-miu-bind="$.text<->value@input">
           </li>
         </template>
       </ul>
@@ -343,7 +390,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <div><span data-miu-bind="text:$key"></span>:<span data-miu-bind="text:$value.text"></span></div>
+            <div><span data-miu-bind="$key->text"></span>:<span data-miu-bind="$value.text->text"></span></div>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -391,7 +438,7 @@ describe('for', () => {
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
-            <div><span data-miu-bind="text:$key"></span>:<span data-miu-bind="text:$value.text"></span></div>
+            <div><span data-miu-bind="$key->text"></span>:<span data-miu-bind="$value.text->text"></span></div>
             <button data-miu-on="click:${storeName}.removeItem">×</button>
           </li>
         </template>
@@ -447,10 +494,10 @@ describe('for', () => {
       <div data-miu-for="${storeName}.users">
         <template>
           <div class="user">
-            <h3 data-miu-bind="text:$.name"></h3>
+            <h3 data-miu-bind="$.name->text"></h3>
             <ul data-miu-for="$.contacts">
               <template>
-                <li><span data-miu-bind="text:$.type"></span>:<span data-miu-bind="text:$.value"></span></li>
+                <li><span data-miu-bind="$.type->text"></span>:<span data-miu-bind="$.value->text"></span></li>
               </template>
             </ul>
           </div>
