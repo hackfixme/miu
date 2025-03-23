@@ -129,6 +129,103 @@ describe('bind', () => {
     expect(store.checked).toBe(true);
   });
 
+  test('supports multiple one-way bindings', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      text: 'initial text',
+      cls: 'initial-class',
+      title: 'initial title'
+    });
+
+    document.body.innerHTML = `
+      <div data-miu-bind="${storeName}.text->text
+                          ${storeName}.cls->class
+                          ${storeName}.title->title"></div>
+    `;
+    bind(document.body, [store]);
+
+    const div = document.querySelector('div');
+    expect(div.textContent).toBe('initial text');
+    expect(div.getAttribute('class')).toBe('initial-class');
+    expect(div.getAttribute('title')).toBe('initial title');
+
+    store.text = 'updated text';
+    store.cls = 'updated-class';
+    expect(div.textContent).toBe('updated text');
+    expect(div.getAttribute('class')).toBe('updated-class');
+    expect(div.getAttribute('title')).toBe('initial title');
+  });
+
+  test('supports multiple two-way bindings', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      value: 'initial value',
+      placeholder: 'initial placeholder'
+    });
+
+    document.body.innerHTML = `
+      <input type="text"
+             data-miu-bind="${storeName}.value<->value@input
+                           ${storeName}.placeholder<->placeholder@change">
+    `;
+    bind(document.body, [store]);
+
+    const input = document.querySelector('input');
+    expect(input.value).toBe('initial value');
+    expect(input.placeholder).toBe('initial placeholder');
+
+    // Store updates element
+    store.value = 'updated value';
+    store.placeholder = 'updated placeholder';
+    expect(input.value).toBe('updated value');
+    expect(input.placeholder).toBe('updated placeholder');
+
+    // Element updates store
+    input.value = 'element value';
+    input.dispatchEvent(new Event('input'));
+    expect(store.value).toBe('element value');
+
+    input.placeholder = 'element placeholder';
+    input.dispatchEvent(new Event('change'));
+    expect(store.placeholder).toBe('element placeholder');
+
+    // The other store value remains unchanged
+    expect(store.value).toBe('element value');
+  });
+
+  test('supports mix of one-way and two-way bindings', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      value: 'initial value',
+      cls: 'initial-class'
+    });
+
+    document.body.innerHTML = `
+      <input type="text"
+             data-miu-bind="${storeName}.value<->value@input
+                           ${storeName}.cls->class">
+    `;
+    bind(document.body, [store]);
+
+    const input = document.querySelector('input');
+    expect(input.value).toBe('initial value');
+    expect(input.getAttribute('class')).toBe('initial-class');
+
+    // Store updates both
+    store.value = 'updated value';
+    store.cls = 'updated-class';
+    expect(input.value).toBe('updated value');
+    expect(input.getAttribute('class')).toBe('updated-class');
+
+    // Element only updates two-way binding
+    input.value = 'element value';
+    input.dispatchEvent(new Event('input'));
+    expect(store.value).toBe('element value');
+
+    input.setAttribute('class', 'element-class');
+    expect(store.cls).toBe('updated-class'); // unchanged
+  });
+
   test('throws on invalid bind syntax', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 42 });

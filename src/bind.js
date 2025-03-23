@@ -77,68 +77,74 @@ function getBindContext(element) {
 }
 
 /**
- * Parse a bind attribute in the format "storePath->target" for one-way binding
- * or "storePath<->target@event" for two-way binding, where:
+ * Parse a bind attribute that can contain multiple bindings separated by spaces.
+ * Each binding can be in the format:
+ * - "storePath->target" for one-way binding
+ * - "storePath<->target@event" for two-way binding
+ * where:
  * - storePath: "<store name>.<path>" or "$[.<path>]" for loop references
- * - target: 'text' for textContent binding, or any valid attribute/property name of the element
- * - event: Required for two-way binding, the DOM event that triggers updates to the store
+ * - target: 'text' for textContent binding, or any valid attribute/property name
+ * - event: Required for two-way binding, the DOM event that triggers store updates
  *
  * @param {HTMLElement} el - Element with the binding attribute
- * @returns {{
+ * @returns {Array<{
  *   store: Store,
  *   path: string,
  *   target: string,
  *   twoWay: boolean,
  *   event?: string,
  *   key?: string
- * }}
- * @throws {Error} If the binding format is invalid or store is not found
+ * }>}
+ * @throws {Error} If any binding format is invalid or store is not found
  */
 function parseBindAttr(el) {
   const attrVal = el.getAttribute(ATTRS.BIND);
 
-  // Match either -> or <-> with groups for left/right sides
-  const match = attrVal.match(/^(.+?)(->|<->)(.+)$/);
-  if (!match) {
-    throw new Error(`[miu] Invalid bind syntax: ${attrVal}. Expected: storePath->target or storePath<->target@event`);
-  }
-
-  const [, storePath, arrow, rightSide] = match;
-  const twoWay = arrow === '<->';
-
-  // Parse right side for target and optional event
-  let target, event;
-  if (twoWay) {
-    const parts = rightSide.split('@');
-    if (parts.length !== 2) {
-      throw new Error(`[miu] Two-way binding requires @event: ${attrVal}`);
+  // Split by whitespace, filtering out empty strings
+  return attrVal.split(/\s+/).filter(Boolean).map(binding => {
+    // Match either -> or <-> with groups for left/right sides
+    const match = binding.match(/^(.+?)(->|<->)(.+)$/);
+    if (!match) {
+      throw new Error(`[miu] Invalid bind syntax: ${binding}. Expected: storePath->target or storePath<->target@event`);
     }
-    [target, event] = parts;
-    if (!target || !event) {
-      throw new Error(`[miu] Two-way binding requires both target and event: ${attrVal}`);
-    }
-  } else {
-    if (rightSide.includes('@')) {
-      throw new Error(`[miu] One-way binding should not specify @event: ${attrVal}`);
-    }
-    target = rightSide;
-  }
 
-  // Resolve store reference (either direct store path or inner loop reference)
-  let storeAndPath;
-  if (storePath.charAt(0) === SEL) {
-    const bindCtx = getBindContext(el);
-    storeAndPath = resolveStoreRef(ATTRS.BIND, storePath, bindCtx);
-  } else {
-    storeAndPath = getStoreAndPath(storePath);
-  }
+    const [, storePath, arrow, rightSide] = match;
+    const twoWay = arrow === '<->';
 
-  return {
-    ...storeAndPath,
-    target,
-    twoWay,
-    event,
-  };
+    // Parse right side for target and optional event
+    let target, event;
+    if (twoWay) {
+      const parts = rightSide.split('@');
+      if (parts.length !== 2) {
+        throw new Error(`[miu] Two-way binding requires @event: ${binding}`);
+      }
+      [target, event] = parts;
+      if (!target || !event) {
+        throw new Error(`[miu] Two-way binding requires both target and event: ${binding}`);
+      }
+    } else {
+      if (rightSide.includes('@')) {
+        throw new Error(`[miu] One-way binding should not specify @event: ${binding}`);
+      }
+      target = rightSide;
+    }
+
+    // Resolve store reference (either direct store path or inner loop reference)
+    let storeAndPath;
+    if (storePath.charAt(0) === SEL) {
+      const bindCtx = getBindContext(el);
+      storeAndPath = resolveStoreRef(ATTRS.BIND, storePath, bindCtx);
+    } else {
+      storeAndPath = getStoreAndPath(storePath);
+    }
+
+    return {
+      ...storeAndPath,
+      target,
+      twoWay,
+      event,
+    };
+  });
 }
 
 /**
@@ -337,32 +343,32 @@ function storeSubscribe(element, path, subFn) {
 }
 
 /**
- * Bind an element to a store using the provided binding configuration.
- * Resolves the current value and sets up one or two-way data binding.
- *
+ * Bind an element to stores using one or more binding configurations.
  * @param {HTMLElement} element - The DOM element to bind
- * @param {{
+ * @param {Array<{
  *   store: Store,
  *   path: string,
  *   target: string,
  *   twoWay: boolean,
  *   event?: string,
  *   key?: string
- * }} bindConfig - Configuration describing how to bind the element
+ * }>} bindConfigs - Array of configurations describing how to bind the element
  */
-function bindElement(element, bindConfig) {
-  // Get current value from store (or use key for loop bindings)
-  const value = bindConfig.key ?? bindConfig.store.$get(bindConfig.path);
+function bindElement(element, bindConfigs) {
+  for (const config of bindConfigs) {
+    // Get current value from store (or use key for loop bindings)
+    const value = config.key ?? config.store.$get(config.path);
 
-  // Handle computed values (functions)
-  const finalValue = typeof value === 'function'
-    ? value(getBindContext(element))
-    : value;
+    // Handle computed values (functions)
+    const finalValue = typeof value === 'function'
+      ? value(getBindContext(element))
+      : value;
 
-  if (bindConfig.target === 'text') {
-    bindText(element, bindConfig, finalValue);
-  } else {
-    bindAttribute(element, bindConfig, finalValue);
+    if (config.target === 'text') {
+      bindText(element, config, finalValue);
+    } else {
+      bindAttribute(element, config, finalValue);
+    }
   }
 }
 
