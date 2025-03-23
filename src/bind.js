@@ -5,7 +5,6 @@ const ATTRS = {
   FOR:   'data-miu-for',
   INDEX: 'data-miu-index',
   KEY:   'data-miu-key',
-  ON:    'data-miu-on',
 };
 
 const SEL = '$';
@@ -77,74 +76,151 @@ function getBindContext(element) {
 }
 
 /**
- * Parse a bind attribute that can contain multiple bindings separated by spaces.
- * Each binding can be in the format:
+ * Parse a bind attribute that can contain multiple bindings and event handlers
+ * separated by spaces.
+ * Bindings can be in the format:
  * - "storePath->target" for one-way binding
  * - "storePath<->target@event" for two-way binding
+ * Event handlers can be in the format:
+ * - "[storePath.]handler@event"
  * where:
  * - storePath: "<store name>.<path>" or "$[.<path>]" for loop references
  * - target: 'text' for textContent binding, or any valid attribute/property name
- * - event: Required for two-way binding, the DOM event that triggers store updates
+ * - event: DOM event that triggers store updates or handler calls
+ * - handler: Function reference in the store or in the global scope
  *
  * @param {HTMLElement} el - Element with the binding attribute
  * @returns {Array<{
+ *   type: ('binding'|'event'),
+ *   store?: Store,
+ *   path?: string,
+ *   target?: string,
+ *   twoWay?: boolean,
+ *   event?: string,
+ *   fn?: Function,
+ *   triggerStore?: Store,
+ *   triggerPath?: string
+ * }>}
+ * @throws {Error} If any binding format is invalid or store/handler is not found
+ */
+function parseBindAttr(el) {
+  const attrVal = el.getAttribute(ATTRS.BIND);
+  return attrVal.split(/\s+/)
+    .filter(Boolean) // filter out empty strings
+    .map(binding => binding.includes('->')
+      ? parseBinding(binding, el)
+      : parseEventBinding(binding));
+}
+
+/**
+ * Parse a data binding specification.
+ * @param {string} binding - Binding specification string
+ * @param {HTMLElement} element - Element with the binding attribute
+ * @returns {{
+ *   type: 'binding',
  *   store: Store,
  *   path: string,
  *   target: string,
  *   twoWay: boolean,
- *   event?: string,
- *   key?: string
- * }>}
- * @throws {Error} If any binding format is invalid or store is not found
+ *   event?: string
+ * }}
+ * @throws {Error} If binding format is invalid or store is not found
+ * @private
  */
-function parseBindAttr(el) {
-  const attrVal = el.getAttribute(ATTRS.BIND);
+function parseBinding(binding, element) {
+  const match = binding.match(/^(.+?)(->|<->)(.+)$/);
+  if (!match) {
+    throw new Error(`[miu] Invalid bind syntax: ${binding}. Expected: storePath->target or storePath<->target@event`);
+  }
 
-  // Split by whitespace, filtering out empty strings
-  return attrVal.split(/\s+/).filter(Boolean).map(binding => {
-    // Match either -> or <-> with groups for left/right sides
-    const match = binding.match(/^(.+?)(->|<->)(.+)$/);
-    if (!match) {
-      throw new Error(`[miu] Invalid bind syntax: ${binding}. Expected: storePath->target or storePath<->target@event`);
+  const [, storePath, arrow, rightSide] = match;
+  const twoWay = arrow === '<->';
+
+  let target, event;
+  if (twoWay) {
+    const parts = rightSide.split('@');
+    if (parts.length !== 2) {
+      throw new Error(`[miu] Two-way binding requires @event: ${binding}`);
     }
-
-    const [, storePath, arrow, rightSide] = match;
-    const twoWay = arrow === '<->';
-
-    // Parse right side for target and optional event
-    let target, event;
-    if (twoWay) {
-      const parts = rightSide.split('@');
-      if (parts.length !== 2) {
-        throw new Error(`[miu] Two-way binding requires @event: ${binding}`);
-      }
-      [target, event] = parts;
-      if (!target || !event) {
-        throw new Error(`[miu] Two-way binding requires both target and event: ${binding}`);
-      }
-    } else {
-      if (rightSide.includes('@')) {
-        throw new Error(`[miu] One-way binding should not specify @event: ${binding}`);
-      }
-      target = rightSide;
+    [target, event] = parts;
+    if (!target || !event) {
+      throw new Error(`[miu] Two-way binding requires both target and event: ${binding}`);
     }
-
-    // Resolve store reference (either direct store path or inner loop reference)
-    let storeAndPath;
-    if (storePath.charAt(0) === SEL) {
-      const bindCtx = getBindContext(el);
-      storeAndPath = resolveStoreRef(ATTRS.BIND, storePath, bindCtx);
-    } else {
-      storeAndPath = getStoreAndPath(storePath);
+  } else {
+    if (rightSide.includes('@')) {
+      throw new Error(`[miu] One-way binding should not specify @event: ${binding}`);
     }
+    target = rightSide;
+  }
 
-    return {
-      ...storeAndPath,
-      target,
-      twoWay,
-      event,
-    };
-  });
+  const storeAndPath = storePath.charAt(0) === SEL
+    ? resolveStoreRef(ATTRS.BIND, storePath, getBindContext(element))
+    : getStoreAndPath(storePath);
+
+  return {
+    ...storeAndPath,
+    type: 'binding',
+    target,
+    twoWay,
+    event,
+  };
+}
+
+/**
+ * Parse an event handler specification.
+ * @param {string} binding - Event binding specification string in the
+ *   format "[storePath.]handler@event"
+ * @returns {{
+ *   type: 'event',
+ *   store?: Store,
+ *   fn: Function,
+ *   event: string,
+ *   triggerStore?: Store,
+ *   triggerPath?: string
+ * }}
+ * @throws {Error} If binding format is invalid or handler is not found/not a function
+ * @private
+ */
+function parseEventBinding(binding) {
+  const parts = binding.split('@');
+  if (parts.length !== 2) {
+    throw new Error(`[miu] Invalid event binding syntax: ${binding}. Expected: storePath.handler@event or globalHandler@event`);
+  }
+
+  const [fnRef, trigger] = parts;
+  if (!fnRef || !trigger) {
+    throw new Error(`[miu] Event binding requires both handler and trigger: ${binding}`);
+  }
+
+  let fn, store;
+  // Get function reference from store or global scope
+  if (fnRef.includes('.')) {
+    const storeAndPath = getStoreAndPath(fnRef);
+    store = storeAndPath.store;
+    fn = store.$get(storeAndPath.path);
+  } else {
+    fn = globalThis[fnRef];
+  }
+
+  if (typeof fn !== 'function') {
+    throw new Error(`[miu] ${fnRef} is not a function`);
+  }
+
+  let triggerStore, triggerPath;
+  // Handle store path triggers
+  if (trigger.includes('.')) {
+    const { store, path } = getStoreAndPath(trigger);
+    triggerStore = store;
+    triggerPath = path;
+  }
+
+  return {
+    type: 'event',
+    ...(store && { store }),
+    fn,
+    event: trigger,
+    ...(triggerStore && { triggerStore, triggerPath })
+  };
 }
 
 /**
@@ -227,94 +303,6 @@ function getStoreAndPath(storePath) {
   return { store, path };
 }
 
-function parseOnAttr(attrStr) {
-  const parseAttrPart = (attr) => {
-    const parts = attr.split(':');
-    if (!attr || parts.length !== 2 || !parts[0] || !parts[1]) {
-      throw new Error(`[miu] Invalid on attribute format: ${attr}`);
-    }
-
-    const [trigger, fnRef] = parts;
-    let fn, store;
-
-    // Get function reference (right side of colon)
-    if (fnRef.includes('.')) {
-      const storeAndPath = getStoreAndPath(fnRef);
-      store = storeAndPath.store;
-      fn = store.$get(storeAndPath.path);
-    } else {
-      fn = globalThis[fnRef];
-    }
-
-    if (typeof fn !== 'function') {
-      throw new Error(`[miu] ${fnRef} is not a function`);
-    }
-
-    const result = store ? { fn, store } : { fn };
-
-    // Handle trigger (left side of colon)
-    if (trigger.includes('.')) {
-      const { store, path } = getStoreAndPath(trigger);
-      return { ...result, type: 'store', triggerStore: store, triggerPath: path };
-    }
-
-    return { ...result, type: 'event', eventName: trigger };
-  };
-
-  return attrStr.split(/\s+/).map(parseAttrPart);
-}
-
-/**
- * Attach event handlers to child elements of root that have the data-miu-on
- * attribute set. The trigger for calling the handler can either be a specific
- * event, or a data store change for a specific path. The handler can be defined
- * globally, or on a specific store. Multiple events can be attached to a single
- * element by separating them with a space.
- * @param {HTMLElement} root - Root element to search for binding attributes
- * @example
- * // Event binding - calls global function
- * <button data-miu-on="click:handleClick">Click me</button>
- *
- * // Event binding - calls store method
- * <button data-miu-on="click:myStore.handleClick">Click me</button>
- *
- * // Store path binding - triggers when store value changes
- * <div data-miu-on="users.active:handleUserChange">...</div>
- *
- * // Multiple bindings
- * <button data-miu-on="click:handleClick
-                        mouseenter:handleHover
-                        users.count:handleCountChange">
- *   Click me
- * </button>
- */
-function setupEventHandlers(root) {
-  for (const el of root.querySelectorAll(`[${ATTRS.ON}]`)) {
-    const attrStr = el.getAttribute(ATTRS.ON);
-    const attrs = parseOnAttr(attrStr);
-
-    for (const attr of attrs) {
-      if (attr.type === 'event') {
-        addEventHandler(el, attr.eventName, (event) => {
-          event.preventDefault();
-          const bindCtx = getBindContext(el);
-          attr.fn.call(attr.store, event, bindCtx);
-        });
-      } else {
-        storeSubscribe(el, attr.triggerPath, () => {
-          return attr.triggerStore.$subscribe(attr.triggerPath, (value) => {
-            const event = new CustomEvent('store:change', {
-              detail: { path: attr.triggerPath }
-            });
-            const bindCtx = getBindContext(el);
-            attr.fn.call(attr.store, event, value, bindCtx);
-          });
-        });
-      }
-    }
-  }
-}
-
 // Attach the handler function for the event on the element. A handler for a
 // unique event name will only be added once.
 // FIXME: It should be possible to add multiple handlers for the same event...
@@ -344,18 +332,51 @@ function storeSubscribe(element, path, subFn) {
 
 /**
  * Bind an element to stores using one or more binding configurations.
+ * Configurations can specify either:
+ * - Value bindings that sync element attributes/properties with store values
+ * - Event handlers that call store or global functions when events occur
+ * Event handlers can be triggered by either:
+ * - DOM events (e.g., "click", "input")
+ * - Store value changes (e.g., "users.count")
+ *
  * @param {HTMLElement} element - The DOM element to bind
  * @param {Array<{
- *   store: Store,
- *   path: string,
- *   target: string,
- *   twoWay: boolean,
+ *   type: ('binding'|'event'),
+ *   store?: Store,
+ *   path?: string,
+ *   target?: string,
+ *   twoWay?: boolean,
  *   event?: string,
- *   key?: string
+ *   fn?: Function,
+ *   triggerStore?: Store,
+ *   triggerPath?: string
  * }>} bindConfigs - Array of configurations describing how to bind the element
  */
 function bindElement(element, bindConfigs) {
   for (const config of bindConfigs) {
+    if (config.type === 'event') {
+      if (config.triggerStore) {
+        // Store value change trigger
+        storeSubscribe(element, config.triggerPath, () => {
+          return config.triggerStore.$subscribe(config.triggerPath, (value) => {
+            const event = new CustomEvent('store:change', {
+              detail: { path: config.triggerPath }
+            });
+            const bindCtx = getBindContext(element);
+            config.fn.call(config.store, event, value, bindCtx);
+          });
+        });
+      } else {
+        // DOM event trigger
+        addEventHandler(element, config.event, (event) => {
+          event.preventDefault();
+          const bindCtx = getBindContext(element);
+          config.fn.call(config.store, event, bindCtx);
+        });
+      }
+      continue;
+    }
+
     // Get current value from store (or use key for loop bindings)
     const value = config.key ?? config.store.$get(config.path);
 
@@ -528,13 +549,11 @@ function bindForEach(element, store, path) {
       // TODO: Filter only elements managed by Miu, to allow other elements to
       // exist within the for-loop container.
       let el = element.children[index + 1]; // +1 to account for the template
-      let cloned = false;
       if (!el) {
         // No element for this item, so create it.
         const clone = document.importNode(template.content, true);
         element.appendChild(clone);
         el = element.lastElementChild;
-        cloned = true;
       }
 
       // Set the index of this item so that it can be used to retrieve the
@@ -551,9 +570,6 @@ function bindForEach(element, store, path) {
       // storeSubscribe ensures only a single subscription is added, but it's
       // unnecessary.
       setupBindings(el);
-      if (cloned) {
-        setupEventHandlers(el);
-      }
 
       count++;
     }
@@ -582,7 +598,6 @@ function bind(element, newStores) {
   }
 
   setupBindings(el);
-  setupEventHandlers(el);
 }
 
 export { bind };

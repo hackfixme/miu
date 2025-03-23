@@ -17,14 +17,14 @@
     <h1>Todo List</h1>
 
     <input data-miu-bind="todo.newTask<->value@input" placeholder="New task...">
-    <button data-miu-on="click:todo.addTask">Add</button>
+    <button data-miu-bind="todo.addTask@click">Add</button>
 
     <ul data-miu-for="todo.tasks">
       <template>
         <li>
           <input type="checkbox" data-miu-bind="$.done<->checked@change">
           <span data-miu-bind="$.text->text"></span>
-          <button data-miu-on="click:todo.removeTask">×</button>
+          <button data-miu-bind="todo.removeTask@click">×</button>
         </li>
       </template>
     </ul>

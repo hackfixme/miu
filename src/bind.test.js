@@ -5,7 +5,7 @@ import { Store } from './store.js';
 // Array.length and Map.size are properly proxied.
 import { deepCopy } from './util.js';
 
-describe('bind', () => {
+describe('bind element', () => {
   test('text elements bind to store value - one-way', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
@@ -226,19 +226,6 @@ describe('bind', () => {
     expect(store.cls).toBe('updated-class'); // unchanged
   });
 
-  test('throws on invalid bind syntax', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, { value: 42 });
-
-    // Missing bind target
-    document.body.innerHTML = `
-      <button data-miu-bind="${storeName}.value">Test</button>
-    `;
-
-    expect(() => bind(document.body, [store]))
-      .toThrow(`Invalid bind syntax: ${storeName}.value`);
-  });
-
   test('throws on two-way binding without event', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 'test' });
@@ -285,6 +272,218 @@ describe('bind', () => {
 
     expect(() => bind(document.body, [store]))
       .toThrow(`One-way binding should not specify @event: ${storeName}.value->value@input`);
+  });
+});
+
+describe('bind event', () => {
+  test('handles store function handlers', () => {
+    const storeName = `test-${randomString()}`;
+    const storeHandler = vi.fn();
+    const store = new Store(storeName, {
+      handler: storeHandler
+    });
+
+    document.body.innerHTML = `
+      <button data-miu-bind="${storeName}.handler@click">Test</button>
+    `;
+    bind(document.body, [store]);
+
+    document.querySelector('button').click();
+
+    expect(storeHandler).toHaveBeenCalledWith(
+      expect.any(MouseEvent),
+      undefined
+    );
+  });
+
+  test('handles store function handlers with bind context', () => {
+    const storeName = `test-${randomString()}`;
+    const storeHandler = vi.fn();
+    const store = new Store(storeName, {
+      items: [
+        { text: 'item1' },
+        { text: 'item2' },
+      ],
+      handler: storeHandler
+    });
+
+    const globalHandler = vi.fn();
+    globalThis.globalHandler = globalHandler;
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li>
+            <button data-miu-bind="${storeName}.handler@click">Test</button>
+          </li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    document.querySelectorAll('button')[1].click();
+
+    expect(storeHandler).toHaveBeenCalledWith(
+      expect.any(MouseEvent),
+      {
+        item: { text: 'item2' },
+        index: '1',
+        key: null,
+        path: 'items',
+        store: store
+      }
+    );
+  });
+
+  test('handles global function handlers', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName);
+
+    const globalHandler = vi.fn();
+    globalThis.globalHandler = globalHandler;
+
+    document.body.innerHTML = `
+      <button data-miu-bind="globalHandler@click">Test</button>
+    `;
+    bind(document.body, [store]);
+
+    document.querySelector('button').click();
+
+    expect(globalHandler).toHaveBeenCalledWith(
+      expect.any(MouseEvent),
+      undefined
+    );
+
+    delete globalThis.globalHandler;
+  });
+
+  test('handles global function handlers with bind context', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: [
+        { text: 'item1' },
+        { text: 'item2' },
+      ],
+    });
+
+    const globalHandler = vi.fn();
+    globalThis.globalHandler = globalHandler;
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li>
+            <button data-miu-bind="globalHandler@click">Test</button>
+          </li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    document.querySelectorAll('button')[1].click();
+
+    expect(globalHandler).toHaveBeenCalledWith(
+      expect.any(MouseEvent),
+      {
+        item: { text: 'item2' },
+        index: '1',
+        key: null,
+        path: 'items',
+        store: store
+      }
+    );
+
+    delete globalThis.globalHandler;
+  });
+
+  test('handles multiple events on same element', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      clickCount: 0,
+      mouseoverCount: 0,
+      handleClick() { this.clickCount++ },
+      handleMouseover() { this.mouseoverCount++ }
+    });
+
+    document.body.innerHTML = `
+      <button
+        data-miu-bind="${storeName}.handleClick@click
+                       ${storeName}.handleMouseover@mouseenter">
+        Test
+      </button>
+    `;
+    bind(document.body, [store]);
+
+    const button = document.querySelector('button');
+    button.click();
+    button.dispatchEvent(new Event('mouseenter'));
+
+    expect(store.clickCount).toBe(1);
+    expect(store.mouseoverCount).toBe(1);
+  });
+
+  test('handles store path triggers', () => {
+    const storeName = `test-${randomString()}`;
+    const handler = vi.fn();
+    const store = new Store(storeName, {
+      count: 0,
+      handler
+    });
+
+    document.body.innerHTML = `
+      <button data-miu-bind="${storeName}.handler@${storeName}.count">Test</button>
+    `;
+    bind(document.body, [store]);
+
+    store.count = 1;
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    const [[event, value, bindCtx]] = handler.mock.calls;
+    expect(event).toBeInstanceOf(CustomEvent);
+    expect(event.type).toBe('store:change');
+    expect(event.detail).toEqual({ path: 'count' });
+    expect(value).toBe(1);
+    expect(bindCtx).toBeUndefined();
+  });
+
+  test('throws on invalid event binding syntax', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, { value: 42 });
+
+    // Missing bind target
+    document.body.innerHTML = `
+      <button data-miu-bind="${storeName}.value">Test</button>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`Invalid event binding syntax: ${storeName}.value`);
+  });
+
+  test('throws when store handler reference is not a function', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {});
+
+    document.body.innerHTML = `
+      <button data-miu-bind="${storeName}.nonexistentHandler@click">Test</button>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow(`${storeName}.nonexistentHandler is not a function`);
+  });
+
+  test('throws when global handler reference is not a function', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {});
+
+    globalThis.notAFunction = 'string';
+    document.body.innerHTML = `
+      <button data-miu-bind="notAFunction@click">Test</button>
+    `;
+
+    expect(() => bind(document.body, [store]))
+      .toThrow('notAFunction is not a function');
+
+    delete globalThis.notAFunction;
   });
 });
 
@@ -338,7 +537,7 @@ describe('for', () => {
         <template>
           <li>
             <span data-miu-bind="$.text->text"></span>
-            <button data-miu-on="click:${storeName}.removeItem">×</button>
+            <button data-miu-bind="${storeName}.removeItem@click">×</button>
           </li>
         </template>
       </ul>
@@ -488,7 +687,7 @@ describe('for', () => {
         <template>
           <li>
             <div><span data-miu-bind="$key->text"></span>:<span data-miu-bind="$value.text->text"></span></div>
-            <button data-miu-on="click:${storeName}.removeItem">×</button>
+            <button data-miu-bind="${storeName}.removeItem@click">×</button>
           </li>
         </template>
       </ul>
@@ -536,7 +735,7 @@ describe('for', () => {
         <template>
           <li>
             <div><span data-miu-bind="$key->text"></span>:<span data-miu-bind="$value.text->text"></span></div>
-            <button data-miu-on="click:${storeName}.removeItem">×</button>
+            <button data-miu-bind="${storeName}.removeItem@click">×</button>
           </li>
         </template>
       </ul>
@@ -648,217 +847,6 @@ describe('for', () => {
 
     expect(() => bind(document.body, [store]))
       .toThrow(`Value of ${storeName}.value is not iterable`);
-  });
-});
-
-describe('on', () => {
-  test('handles store function handlers', () => {
-    const storeName = `test-${randomString()}`;
-    const storeHandler = vi.fn();
-    const store = new Store(storeName, {
-      handler: storeHandler
-    });
-
-    document.body.innerHTML = `
-      <button data-miu-on="click:${storeName}.handler">Test</button>
-    `;
-    bind(document.body, [store]);
-
-    document.querySelector('button').click();
-
-    expect(storeHandler).toHaveBeenCalledWith(
-      expect.any(MouseEvent),
-      undefined
-    );
-  });
-
-  test('handles store function handlers with bind context', () => {
-    const storeName = `test-${randomString()}`;
-    const storeHandler = vi.fn();
-    const store = new Store(storeName, {
-      items: [
-        { text: 'item1' },
-        { text: 'item2' },
-      ],
-      handler: storeHandler
-    });
-
-    const globalHandler = vi.fn();
-    globalThis.globalHandler = globalHandler;
-
-    document.body.innerHTML = `
-      <ul data-miu-for="${storeName}.items">
-        <template>
-          <li>
-            <button data-miu-on="click:${storeName}.handler">Test</button>
-          </li>
-        </template>
-      </ul>
-    `;
-    bind(document.body, [store]);
-
-    document.querySelectorAll('button')[1].click();
-
-    expect(storeHandler).toHaveBeenCalledWith(
-      expect.any(MouseEvent),
-      {
-        item: { text: 'item2' },
-        index: '1',
-        key: null,
-        path: 'items',
-        store: store
-      }
-    );
-  });
-
-  test('handles global function handlers', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName);
-
-    const globalHandler = vi.fn();
-    globalThis.globalHandler = globalHandler;
-
-    document.body.innerHTML = `
-      <button data-miu-on="click:globalHandler">Test</button>
-    `;
-    bind(document.body, [store]);
-
-    document.querySelector('button').click();
-
-    expect(globalHandler).toHaveBeenCalledWith(
-      expect.any(MouseEvent),
-      undefined
-    );
-
-    delete globalThis.globalHandler;
-  });
-
-  test('handles global function handlers with bind context', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, {
-      items: [
-        { text: 'item1' },
-        { text: 'item2' },
-      ],
-    });
-
-    const globalHandler = vi.fn();
-    globalThis.globalHandler = globalHandler;
-
-    document.body.innerHTML = `
-      <ul data-miu-for="${storeName}.items">
-        <template>
-          <li>
-            <button data-miu-on="click:globalHandler">Test</button>
-          </li>
-        </template>
-      </ul>
-    `;
-    bind(document.body, [store]);
-
-    document.querySelectorAll('button')[1].click();
-
-    expect(globalHandler).toHaveBeenCalledWith(
-      expect.any(MouseEvent),
-      {
-        item: { text: 'item2' },
-        index: '1',
-        key: null,
-        path: 'items',
-        store: store
-      }
-    );
-
-    delete globalThis.globalHandler;
-  });
-
-  test('handles multiple events on same element', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, {
-      clickCount: 0,
-      mouseoverCount: 0,
-      handleClick() { this.clickCount++ },
-      handleMouseover() { this.mouseoverCount++ }
-    });
-
-    document.body.innerHTML = `
-      <button
-        data-miu-on="click:${storeName}.handleClick
-                     mouseenter:${storeName}.handleMouseover">
-        Test
-      </button>
-    `;
-    bind(document.body, [store]);
-
-    const button = document.querySelector('button');
-    button.click();
-    button.dispatchEvent(new Event('mouseenter'));
-
-    expect(store.clickCount).toBe(1);
-    expect(store.mouseoverCount).toBe(1);
-  });
-
-  test('handles store path triggers', () => {
-    const storeName = `test-${randomString()}`;
-    const handler = vi.fn();
-    const store = new Store(storeName, {
-      count: 0,
-      handler
-    });
-
-    document.body.innerHTML = `
-      <button data-miu-on="${storeName}.count:${storeName}.handler">Test</button>
-    `;
-    bind(document.body, [store]);
-
-    store.count = 1;
-
-    expect(handler).toHaveBeenCalledTimes(1);
-    const [[event, value, bindCtx]] = handler.mock.calls;
-    expect(event).toBeInstanceOf(CustomEvent);
-    expect(event.type).toBe('store:change');
-    expect(event.detail).toEqual({ path: 'count' });
-    expect(value).toBe(1);
-    expect(bindCtx).toBeUndefined();
-  });
-
-  test('throws on invalid event format', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, {});
-
-    document.body.innerHTML = `
-      <button data-miu-on="click:store:func">Test</button>
-    `;
-
-    expect(() => bind(document.body, [store]))
-      .toThrow('Invalid on attribute format: click:store:func');
-  });
-
-  test('throws when store handler reference is not a function', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, {});
-
-    document.body.innerHTML = `
-      <button data-miu-on="click:${storeName}.nonexistentHandler">Test</button>
-    `;
-
-    expect(() => bind(document.body, [store]))
-      .toThrow(`${storeName}.nonexistentHandler is not a function`);
-  });
-
-  test('throws when global handler reference is not a function', () => {
-    const storeName = `test-${randomString()}`;
-    const store = new Store(storeName, {});
-
-    globalThis.notAFunction = 'string';
-    document.body.innerHTML = `
-      <button data-miu-on="click:notAFunction">Test</button>
-    `;
-
-    expect(() => bind(document.body, [store]))
-      .toThrow('notAFunction is not a function');
-
-    delete globalThis.notAFunction;
   });
 });
 
