@@ -488,6 +488,39 @@ describe('bind event', () => {
 });
 
 describe('for', () => {
+  test('renders primitive array elements', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: ['item1', 'item2'],
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li data-miu-bind="$->text"></li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial render
+    let items = document.querySelectorAll('li');
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toBe('item1');
+    expect(items[1].textContent).toBe('item2');
+
+    // Store updates UI
+    store.items[1] = 'item2 - updated'
+    expect(items[1].textContent).toBe('item2 - updated');
+
+    store.items.push('item3');
+    items = document.querySelectorAll('li');
+    expect(items.length).toBe(3);
+    expect(items[0].textContent).toBe('item1');
+    expect(items[1].textContent).toBe('item2 - updated');
+    expect(items[2].textContent).toBe('item3');
+  });
+
   test('handles empty arrays correctly', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {

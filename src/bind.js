@@ -261,6 +261,13 @@ function resolveStoreRef(attr, ref, bindCtx) {
   // and retrieve it by its index (which should always be defined).
   const path = `${bindCtx.path}[${bindCtx.key || bindCtx.index}]`;
 
+  if (ref === SEL) {
+    return {
+      store: bindCtx.store,
+      path: path,
+    };
+  }
+
   if (ref === KEY || ref === INDEX) {
     if (attr === ATTRS.FOR) {
       throw new Error(`[miu] ${ref} is unsupported for ${ATTRS.FOR}`);
