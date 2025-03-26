@@ -1,0 +1,61 @@
+{
+  "1998": {
+    "host": { "country": "France", "flag": "🇫🇷" },
+    "results": [
+      { "country": "France", "flag": "🇫🇷" },
+      { "country": "Brazil", "flag": "🇧🇷" },
+      { "country": "Croatia", "flag": "🇭🇷" }
+    ]
+  },
+  "2002": {
+    "host": {
+      "country": "South Korea/Japan",
+      "flag": "🇰🇷/🇯🇵"
+    },
+    "results": [
+      { "country": "Brazil", "flag": "🇧🇷" },
+      { "country": "Germany", "flag": "🇩🇪" },
+      { "country": "Turkey", "flag": "🇹🇷" }
+    ]
+  },
+  "2006": {
+    "host": { "country": "Germany", "flag": "🇩🇪" },
+    "results": [
+      { "country": "Italy", "flag": "🇮🇹" },
+      { "country": "France", "flag": "🇫🇷" },
+      { "country": "Germany", "flag": "🇩🇪" }
+    ]
+  },
+  "2010": {
+    "host": { "country": "South Africa", "flag": "🇿🇦" },
+    "results": [
+      { "country": "Spain", "flag": "🇪🇸" },
+      { "country": "Netherlands", "flag": "🇳🇱" },
+      { "country": "Germany", "flag": "🇩🇪" }
+    ]
+  },
+  "2014": {
+    "host": { "country": "Brazil", "flag": "🇧🇷" },
+    "results": [
+      { "country": "Germany", "flag": "🇩🇪" },
+      { "country": "Argentina", "flag": "🇦🇷" },
+      { "country": "Netherlands", "flag": "🇳🇱" }
+    ]
+  },
+  "2018": {
+    "host": { "country": "Russia", "flag": "🇷🇺" },
+    "results": [
+      { "country": "France", "flag": "🇫🇷" },
+      { "country": "Croatia", "flag": "🇭🇷" },
+      { "country": "Belgium", "flag": "🇧🇪" }
+    ]
+  },
+  "2022": {
+    "host": { "country": "Qatar", "flag": "🇶🇦" },
+    "results": [
+      { "country": "Argentina", "flag": "🇦🇷" },
+      { "country": "France", "flag": "🇫🇷" },
+      { "country": "Croatia", "flag": "🇭🇷" }
+    ]
+  }
+}

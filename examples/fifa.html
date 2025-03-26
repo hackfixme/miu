@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FIFA World Cup results</title>
+    <style>
+    </style>
+    <script type="module" src="/src/miu.js"></script>
+  </head>
+
+  <body>
+    <h1>FIFA World Cup results</h1>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Year</th>
+          <th>Host</th>
+          <th>Results</th>
+        </tr>
+      </thead>
+
+      <tbody data-miu-for="fifa.results">
+        <template>
+          <tr>
+            <td data-miu-bind="$key->text"></td>
+            <td>
+              <span data-miu-bind="$value.host.country->text"></span>
+              <span data-miu-bind="$value.host.flag->text"></span>
+            </td>
+            <td>
+              <ol data-miu-for="$value.results">
+                <template>
+                  <li>
+                    <span data-miu-bind="$.country->text"></span>
+                    <span data-miu-bind="$.flag->text"></span>
+                  </li>
+                </template>
+              </ol>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+
+    </table>
+
+    <script type="module">
+      import { Store, bind } from '/src/miu.js';
+
+      document.addEventListener('DOMContentLoaded', async () => {
+        const resp = await fetch('/examples/fifa.json');
+        const data = await resp.json();
+
+        const fifaStore = new Store('fifa', {
+          results: data,
+        });
+
+        bind(document.body, [fifaStore]);
+      });
+    </script>
+
+  </body>
+</html>
