@@ -297,7 +297,8 @@ function resolveStoreRef(attr, ref, bindCtx) {
 }
 
 function getStoreAndPath(storePath) {
-  const [storeName, path] = storePath.split('.', 2);
+  const [storeName, ...pathParts] = storePath.split('.');
+  const path = pathParts.join('.');
   if (!storeName || !path) {
     throw new Error(`[miu] Invalid path format: ${storePath}`);
   }

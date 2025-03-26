@@ -130,6 +130,10 @@ describe('Store', () => {
       let store;
       beforeEach(() => { store = createTestStore(); });
 
+      test('retrieves array length', () => {
+        expect(store.$get('items.length')).toBe(3);
+      });
+
       test('retrieves nested object values using dot notation', () => {
         expect(store.$get('user.name')).toBe('John');
         expect(store.$get('user.settings.theme')).toBe('light');
@@ -185,9 +189,24 @@ describe('Store', () => {
         expect(store.deeply.nested.value).toBe(42);
       });
 
+      test('allows setting Array.length', () => {
+        store.items.length = 2;
+        expect(store.items).toEqual(['a', 'b']);
+        store.$set('items.length', 1);
+        expect(store.items).toEqual(['a']);
+
+        store.$set('items.length', 5);
+        expect(store.items).toEqual(['a', undefined, undefined, undefined, undefined]);
+      });
+
       test('throws error for invalid array indices', () => {
         expect(() => store.$set('items[-1]', 'x')).toThrow('Invalid array index: -1');
         expect(() => store.$set('items[999]', 'x')).toThrow('Invalid array index: 999');
+      });
+
+      test('throws error when setting Map.size', () => {
+        expect(() => store.$set('userMap.size', 0))
+          .toThrow('Cannot set property size of #<Map> which has only a getter');
       });
 
       testInvalidPathSyntax('$set', '');
@@ -289,6 +308,27 @@ describe('Store', () => {
         path: 'items',
         operation: () => { store.items.reverse(); },
         expectedChanges: [['c', 'b', 'a']]
+      });
+
+      testSubscription({
+        name: 'notifies on array length changes via push',
+        path: 'items.length',
+        operation: () => { store.items.push('d'); },
+        expectedChanges: [4]
+      });
+
+      testSubscription({
+        name: 'notifies on array length changes via splice',
+        path: 'items.length',
+        operation: () => { store.items.splice(0, 2); },
+        expectedChanges: [1]
+      });
+
+      testSubscription({
+        name: 'notifies on Map size changes',
+        path: 'userMap.size',
+        operation: () => { store.userMap.set('u2', { role: 'user' }); },
+        expectedChanges: [2]
       });
 
       testSubscription({

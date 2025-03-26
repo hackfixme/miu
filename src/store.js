@@ -136,6 +136,7 @@ class Store {
         '\\.[a-zA-Z_$][\\w$]*|', // Dot notation: dot followed by property name
         '\\[[^\\[\\]]+\\]',      // Bracket notation: anything except brackets inside []
       ')*',                      // Zero or more repetitions of dot/bracket parts
+      '(?:\.(?:length|size))?',  // optional .length or .size at end
       '$'                        // End of string
     ];
 
@@ -238,6 +239,12 @@ class Store {
     };
 
     const handleArraySet = (target, prop, value, path) => {
+      if (prop === 'length') {
+        target.length = value;
+        notifyListeners(path, target);
+        return true;
+      }
+
       const index = parseInt(prop, 10);
       if (isNaN(index) || index < 0 || index > target.length-1) {
         throw new Error(`[miu] Invalid array index: ${prop}`);
@@ -309,7 +316,6 @@ class Store {
 
     const createProxyHandler = (path) => ({
       get: (target, prop) => {
-        // TODO: Proxy Map.size and Array.length
         const value = target[prop];
 
         if (typeof value === 'function' && value.constructor.name === 'get') {

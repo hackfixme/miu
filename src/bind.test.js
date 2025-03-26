@@ -67,6 +67,24 @@ describe('bind element', () => {
     expect(input.getAttribute('class')).toBe('store-update');
   });
 
+  test('text elements bind to array length - one-way', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      items: ['item1', 'item2'],
+    });
+
+    document.body.innerHTML = `
+      <span data-miu-bind="${storeName}.items.length->text"></span>
+    `;
+    bind(document.body, [store]);
+
+    const span = document.querySelector('span');
+    expect(span.textContent).toBe('2');
+
+    store.items.push('item3');
+    expect(span.textContent).toBe('3');
+  });
+
   test('text input binds to string store value - two-way', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 'initial' });
