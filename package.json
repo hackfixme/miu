@@ -2,7 +2,7 @@
   "name": "miu",
   "version": "0.0.0",
   "author": "Ivan Mirić",
-  "description": "A lightweight UI library for the browser",
+  "description": "A small data binding library for the browser",
   "main": "miu.js",
   "type": "module",
   "directories": {
@@ -21,6 +21,6 @@
   "devDependencies": {
     "esbuild": "0.25.1",
     "jsdom": "^26.0.0",
-    "vitest": "^3.0.8"
+    "vitest": "^3.0.9"
   }
 }
