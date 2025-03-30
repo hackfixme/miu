@@ -582,9 +582,16 @@ function bindForEach(element, store, path) {
       count++;
     }
 
-    // Remove excess elements
+    // Remove excess elements, unsubscribing their store subscriptions, if any.
     while (element.childElementCount - 1 > count) {
-      element.lastElementChild.remove();
+      const el = element.lastElementChild;
+      const subs = storeSubs.get(el);
+      if (subs) {
+        for (const unsub of subs.values()) {
+          unsub();
+        }
+      }
+      el.remove();
     }
   };
 

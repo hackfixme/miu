@@ -464,6 +464,58 @@ describe('bind event', () => {
     expect(bindCtx).toBeUndefined();
   });
 
+  test('removes store subscriptions of removed elements', () => {
+    const storeName = `test-${randomString()}`;
+
+    let onSelectedCalls = 0;
+    const store = new Store(storeName, {
+      items: [1, 2],
+      selected: '',
+      onSelected() {
+        onSelectedCalls++;
+      },
+    });
+
+    document.body.innerHTML = `
+      <ul data-miu-for="${storeName}.items">
+        <template>
+          <li data-miu-bind="$->text ${storeName}.onSelected@${storeName}.selected"></li>
+        </template>
+      </ul>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial render
+    let items = document.querySelectorAll('li');
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toBe('1');
+    expect(items[1].textContent).toBe('2');
+    expect(onSelectedCalls).toBe(0);
+
+    // Update the watched value, which triggers the 2 subscriptions.
+    store.selected = 'val1';
+    expect(onSelectedCalls).toBe(2);
+
+    // Remove the last element.
+    store.items.splice(1);
+    items = document.querySelectorAll('li');
+    expect(items.length).toBe(1);
+    expect(items[0].textContent).toBe('1');
+    expect(onSelectedCalls).toBe(2);
+
+    // When the element is deleted, its subscriptions should be deleted as well.
+    // So this update should trigger a single call from the existing element.
+    store.selected = 'val2';
+    expect(onSelectedCalls).toBe(3);
+
+    // When all elements are deleted, all their subscriptions should be deleted as well.
+    store.items.length = 0;
+    items = document.querySelectorAll('li');
+    expect(items.length).toBe(0);
+    store.selected = 'val3';
+    expect(onSelectedCalls).toBe(3);
+  });
+
   test('throws on invalid event binding syntax', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 42 });
