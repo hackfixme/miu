@@ -98,6 +98,17 @@ describe('Store', () => {
         expect(store.$data).toEqual({});
       });
 
+      test('returns data for nested values', () => {
+        const store = createTestStore();
+        expect(store.user.$data).toEqual({
+          name: 'John',
+          settings: {
+            theme: 'light'
+          }
+        });
+        expect(store.items.$data).toEqual(['a', 'b', 'c']);
+      });
+
       test('preserves data structure but removes functions', () => {
         const initialState = {
           nested: {

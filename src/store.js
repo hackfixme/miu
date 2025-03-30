@@ -180,7 +180,6 @@ class Store {
           }
         };
       },
-      // TODO: Support $data at all path levels, not just root.
       get $data() { return deepCopy(state); }
     };
   }
@@ -316,6 +315,10 @@ class Store {
 
     const createProxyHandler = (path) => ({
       get: (target, prop) => {
+        if (prop === '$data') {
+          return deepCopy(target);
+        }
+
         const value = target[prop];
 
         if (typeof value === 'function' && value.constructor.name === 'get') {
