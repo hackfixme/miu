@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "vitest",
-    "build": "esbuild src/miu.js --bundle --minify --outfile=dist/miu.min.js"
+    "build": "esbuild src/miu.js --bundle --minify --format=esm --outfile=dist/miu.min.js"
   },
   "keywords": [
     "javascript",
