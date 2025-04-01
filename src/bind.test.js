@@ -348,7 +348,8 @@ describe('bind event', () => {
         index: '1',
         key: null,
         path: 'items',
-        store: store
+        store: store,
+        element: expect.any(HTMLElement),
       }
     );
   });
@@ -407,7 +408,8 @@ describe('bind event', () => {
         index: '1',
         key: null,
         path: 'items',
-        store: store
+        store: store,
+        element: expect.any(HTMLElement),
       }
     );
 

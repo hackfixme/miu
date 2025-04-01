@@ -67,6 +67,7 @@ function getBindContext(element) {
       item: parentCtx.items[key || idx],
       index: idx,
       key: key,
+      element: idxEl,
       store: parentCtx.store,
       path: parentCtx.path,
     };
