@@ -1,6 +1,6 @@
 {
   "name": "miu",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Ivan Mirić",
   "description": "A small data binding library for the browser",
   "main": "miu.js",
