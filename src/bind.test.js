@@ -458,7 +458,7 @@ describe('bind event', () => {
     store.count = 1;
 
     expect(handler).toHaveBeenCalledTimes(1);
-    const [[event, value, bindCtx]] = handler.mock.calls;
+    const [[event, bindCtx, value]] = handler.mock.calls;
     expect(event).toBeInstanceOf(CustomEvent);
     expect(event.type).toBe('store:change');
     expect(event.detail).toEqual({ path: 'count' });

@@ -328,14 +328,16 @@ function addEventHandler(element, event, handler) {
 
 // Subscribe to the element to the store value at path. No-op if the
 // subscription for the same element and path already exists.
-function storeSubscribe(element, path, subFn) {
+function storeSubscribe(element, bindConfig, subFn) {
   if (!storeSubs.has(element)) {
     storeSubs.set(element, new Map());
   }
   const elementStoreSubs = storeSubs.get(element);
-  if (!elementStoreSubs.has(path)) {
+  const subKey = bindConfig.type === 'event' ?
+    `event:${bindConfig.event}` : `binding:${bindConfig.path}:${bindConfig.target}`;
+  if (!elementStoreSubs.has(subKey)) {
     const unsub = subFn();
-    elementStoreSubs.set(path, unsub);
+    elementStoreSubs.set(subKey, unsub);
   }
 }
 
@@ -366,13 +368,13 @@ function bindElement(element, bindConfigs) {
     if (config.type === 'event') {
       if (config.triggerStore) {
         // Store value change trigger
-        storeSubscribe(element, config.triggerPath, () => {
+        storeSubscribe(element, config, () => {
           return config.triggerStore.$subscribe(config.triggerPath, (value) => {
             const event = new CustomEvent('store:change', {
-              detail: { path: config.triggerPath }
+              detail: { path: config.triggerPath },
             });
             const bindCtx = getBindContext(element);
-            config.fn.call(config.store, event, value, bindCtx);
+            config.fn.call(config.store, event, bindCtx, value);
           });
         });
       } else {
@@ -428,7 +430,7 @@ function bindAttribute(element, config, value) {
     if (element[config.target] !== value) {
       element[config.target] = value;
     }
-    storeSubscribe(element, config.path, () => {
+    storeSubscribe(element, config, () => {
       return config.store.$subscribe(config.path, (value) => {
         if (element[config.target] !== value) {
           element[config.target] = value;
@@ -445,7 +447,7 @@ function bindAttribute(element, config, value) {
     if (element.getAttribute(config.target) !== value) {
       element.setAttribute(config.target, value);
     }
-    storeSubscribe(element, config.path, () => {
+    storeSubscribe(element, config, () => {
       return config.store.$subscribe(config.path, (value) => {
         if (element.getAttribute(config.target) !== value) {
           element.setAttribute(config.target, value);
@@ -466,7 +468,7 @@ function bindText(element, config, value) {
   if (element.textContent !== value) {
     element.textContent = value;
   }
-  storeSubscribe(element, config.path, () => {
+  storeSubscribe(element, config, () => {
     return config.store.$subscribe(config.path, (value) => {
       if (element.textContent !== value) {
         element.textContent = value;
