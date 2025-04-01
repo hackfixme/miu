@@ -420,7 +420,7 @@ function bindElement(element, bindConfigs) {
  */
 function bindAttribute(element, config, value) {
   // These attributes represent element state and should use properties
-  const useProperty = element.tagName === 'INPUT' &&
+  const useProperty = (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') &&
     (config.target === 'value' || config.target === 'checked');
 
   if (useProperty) {
