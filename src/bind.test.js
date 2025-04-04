@@ -244,6 +244,33 @@ describe('bind element', () => {
     expect(store.cls).toBe('updated-class'); // unchanged
   });
 
+  test('handles computed values', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      value: 1,
+      textValue() {
+        return this.value;
+      }
+    });
+
+    document.body.innerHTML = `
+      <p data-miu-bind="${storeName}.textValue->text"></p>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial render
+    const item = document.querySelector('p');
+    expect(item.textContent).toBe('1');
+
+    // Store updates UI
+    store.value = 2;
+    // Ideally the above value change should be enough to trigger the UI update,
+    // but since dependencies in computed values aren't being tracked yet, we
+    // need to manually update the function path itself for the trigger.
+    store.textValue = store.textValue;
+    expect(item.textContent).toBe('2');
+  });
+
   test('throws on two-way binding without event', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, { value: 'test' });

@@ -391,15 +391,10 @@ function bindElement(element, bindConfigs) {
     // Get current value from store (or use key for loop bindings)
     const value = config.key ?? config.store.$get(config.path);
 
-    // Handle computed values (functions)
-    const finalValue = typeof value === 'function'
-      ? value(getBindContext(element))
-      : value;
-
     if (config.target === 'text') {
-      bindText(element, config, finalValue);
+      bindText(element, config, value);
     } else {
-      bindAttribute(element, config, finalValue);
+      bindAttribute(element, config, value);
     }
   }
 }
@@ -427,15 +422,15 @@ function bindAttribute(element, config, value) {
     (config.target === 'value' || config.target === 'checked');
 
   if (useProperty) {
-    if (element[config.target] !== value) {
-      element[config.target] = value;
+    const fn = (val) => {
+      val = getValue(config.store, element, val);
+      if (element[config.target] !== val) {
+        element[config.target] = val;
+      }
     }
+    fn(value);
     storeSubscribe(element, config, () => {
-      return config.store.$subscribe(config.path, (value) => {
-        if (element[config.target] !== value) {
-          element[config.target] = value;
-        }
-      });
+      return config.store.$subscribe(config.path, fn);
     });
 
     if (config.twoWay) {
@@ -444,15 +439,15 @@ function bindAttribute(element, config, value) {
       });
     }
   } else {
-    if (element.getAttribute(config.target) !== value) {
-      element.setAttribute(config.target, value);
+    const fn = (val) => {
+      val = getValue(config.store, element, val);
+      if (element.getAttribute(config.target) !== val) {
+        element.setAttribute(config.target, val);
+      }
     }
+    fn(value);
     storeSubscribe(element, config, () => {
-      return config.store.$subscribe(config.path, (value) => {
-        if (element.getAttribute(config.target) !== value) {
-          element.setAttribute(config.target, value);
-        }
-      });
+      return config.store.$subscribe(config.path, fn);
     });
 
     if (config.twoWay) {
@@ -463,18 +458,39 @@ function bindAttribute(element, config, value) {
   }
 }
 
-// Bind any element's textContent to the store value at path.
+/**
+ * Bind a store value change to update an element's textContent property.
+ *
+ * @param {HTMLElement} element - The DOM element to bind
+ * @param {{
+ *   store: Store,
+ *   path: string,
+ *   target: string,
+ *   twoWay: boolean,
+ *   event?: string
+ * }} config - Configuration describing how to bind the element
+ * @param {*} value - The current value to bind
+ */
 function bindText(element, config, value) {
-  if (element.textContent !== value) {
-    element.textContent = value;
+  const fn = (val) => {
+    val = getValue(config.store, element, val);
+    if (element.textContent !== val) {
+      element.textContent = val;
+    }
   }
+  fn(value);
   storeSubscribe(element, config, () => {
-    return config.store.$subscribe(config.path, (value) => {
-      if (element.textContent !== value) {
-        element.textContent = value;
-      }
-    });
+    return config.store.$subscribe(config.path, fn);
   });
+}
+
+// Return the value to set on the element. If the value is a function (computed value),
+// it will be evaluated with the store and the element's bind context.
+function getValue(store, element, value) {
+  if (typeof value === 'function') {
+    value = value.call(store, getBindContext(element));
+  }
+  return value;
 }
 
 /**
