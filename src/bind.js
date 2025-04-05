@@ -29,10 +29,11 @@ const storeSubs = new WeakMap();
 function setupBindings(root) {
   // Setup for loops first as they create new elements.
   const forSelector = `[${ATTRS.FOR}]`;
-  const forElements = [
-      ...(root.matches(forSelector) ? [root] : []),
-      ...root.querySelectorAll(forSelector)
-  ];
+  const forElements = typeof root.matches === 'function'
+    ? [...(root.matches(forSelector) ? [root] : []),
+       ...root.querySelectorAll(forSelector)]
+    : root.querySelectorAll(forSelector);
+
   for (const el of forElements) {
     const {store, path} = parseForAttr(el);
     bindForEach(el, store, path);
@@ -40,10 +41,11 @@ function setupBindings(root) {
 
   // Setup all other bindings.
   const bindSelector = `[${ATTRS.BIND}]`;
-  const bindElements = [
-      ...(root.matches(bindSelector) ? [root] : []),
-      ...root.querySelectorAll(bindSelector)
-  ];
+  const bindElements = typeof root.matches === 'function'
+    ? [...(root.matches(bindSelector) ? [root] : []),
+       ...root.querySelectorAll(bindSelector)]
+    : root.querySelectorAll(bindSelector);
+
   for (const el of bindElements) {
     const bindConfig = parseBindAttr(el);
     bindElement(el, bindConfig);
