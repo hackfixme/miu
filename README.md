@@ -1,4 +1,4 @@
-# Miu
+# Miu <img width="60" height="40" src="/assets/logo.svg">
 
 Miu is a small JavaScript data binding library for building simple web user
 interfaces. It keeps the UI in sync with the data using a minimal, declarative API.
