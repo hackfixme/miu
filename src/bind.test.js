@@ -301,7 +301,7 @@ describe('bind element', () => {
     expect(el2Child.textContent).toBe('Charlie updated');
   });
 
-  test('handles style bindings', () => {
+  test('supports style bindings', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       color: '#ff0000',
@@ -327,7 +327,7 @@ describe('bind element', () => {
     expect(item.style.backgroundColor).toBe('rgb(0, 255, 0)');
   });
 
-  test('handles computed values', () => {
+  test('supports computed values', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       value: 1,
@@ -404,7 +404,7 @@ describe('bind element', () => {
 });
 
 describe('bind event', () => {
-  test('handles store function handlers', () => {
+  test('supports store function handlers', () => {
     const storeName = `test-${randomString()}`;
     const storeHandler = vi.fn();
     const store = new Store(storeName, {
@@ -424,7 +424,7 @@ describe('bind event', () => {
     );
   });
 
-  test('handles store function handlers with bind context', () => {
+  test('supports store function handlers with bind context', () => {
     const storeName = `test-${randomString()}`;
     const storeHandler = vi.fn();
     const store = new Store(storeName, {
@@ -464,7 +464,7 @@ describe('bind event', () => {
     );
   });
 
-  test('handles global function handlers', () => {
+  test('supports global function handlers', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName);
 
@@ -486,7 +486,7 @@ describe('bind event', () => {
     delete globalThis.globalHandler;
   });
 
-  test('handles global function handlers with bind context', () => {
+  test('supports global function handlers with bind context', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       items: [
@@ -526,7 +526,7 @@ describe('bind event', () => {
     delete globalThis.globalHandler;
   });
 
-  test('handles multiple events on same element', () => {
+  test('supports multiple events on same element', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       clickCount: 0,
@@ -552,7 +552,7 @@ describe('bind event', () => {
     expect(store.mouseoverCount).toBe(1);
   });
 
-  test('handles store path triggers', () => {
+  test('supports store path triggers', () => {
     const storeName = `test-${randomString()}`;
     const handler = vi.fn();
     const store = new Store(storeName, {
@@ -703,7 +703,7 @@ describe('for', () => {
     expect(items[2].textContent).toBe('item3');
   });
 
-  test('handles empty arrays correctly', () => {
+  test('supports empty arrays correctly', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       items: []
@@ -782,7 +782,7 @@ describe('for', () => {
     expect(items[1].querySelector('span').textContent).toBe('item3');
   });
 
-  test('handles array reordering correctly', () => {
+  test('supports array reordering correctly', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       items: [
@@ -821,7 +821,7 @@ describe('for', () => {
     expect(items[2].textContent).toBe('3:third');
   });
 
-  test('handles sorting with computed values', () => {
+  test('supports sorting with computed values', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
       items: [

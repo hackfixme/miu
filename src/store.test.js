@@ -57,7 +57,7 @@ describe('Store', () => {
       expect(store2.value).toBe(2);
     });
 
-    test('handles falsy initial values correctly', () => {
+    test('supports falsy initial values correctly', () => {
       const store = new Store('falsyStore', {
         zero: 0,
         empty: '',
@@ -380,7 +380,7 @@ describe('Store', () => {
         expectedChanges: [new Map()]
       });
 
-      test('handles multiple array mutations in sequence', () => {
+      test('supports multiple array mutations in sequence', () => {
         const changes = [];
         store.$subscribe('items', value => changes.push([...value]));
 
@@ -395,7 +395,7 @@ describe('Store', () => {
         ]);
       });
 
-      test('handles empty array operations correctly', () => {
+      test('supports empty array operations correctly', () => {
         const store = new Store('testStore', { emptyArr: [] });
         const changes = [];
         store.$subscribe('emptyArr', value => changes.push([...value]));
@@ -434,7 +434,7 @@ describe('Store', () => {
         expect(entryChanges).toEqual([undefined]);
       });
 
-      test('handles nested Map operations', () => {
+      test('supports nested Map operations', () => {
         const store = new Store('test', {
           mapOfMaps: new Map([
             ['m1', new Map([['key', 'value']])]
@@ -480,7 +480,7 @@ describe('Store', () => {
         expect(changes2).toEqual(['Jane', 'Bob']);
       });
 
-      test('handles subscriptions to non-existent paths', () => {
+      test('supports subscriptions to non-existent paths', () => {
         const changes = [];
         store.$subscribe('user.nonexistent.deep', (value) => changes.push(value));
 
@@ -525,7 +525,7 @@ describe('Store', () => {
         expect(userChanges).toEqual([{ name: 'Jane', settings: { theme: 'light' } }]);
       });
 
-      test('handles subscription to root path', () => {
+      test('supports subscription to root path', () => {
         const changes = [];
         store.$subscribe('', (value) => changes.push(value));
 
