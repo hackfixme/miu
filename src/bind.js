@@ -97,7 +97,7 @@ function getBindContext(element) {
  *   type: ('binding'|'event'),
  *   store?: Store,
  *   path?: string,
- *   target?: string,
+ *   target?: {type: string, name: string},
  *   twoWay?: boolean,
  *   event?: string,
  *   fn?: Function,
@@ -123,7 +123,7 @@ function parseBindAttr(el) {
  *   type: 'binding',
  *   store: Store,
  *   path: string,
- *   target: string,
+ *   target: {type: string, name: string},
  *   twoWay: boolean,
  *   event?: string
  * }}
@@ -139,22 +139,24 @@ function parseBinding(binding, element) {
   const [, storePath, arrow, rightSide] = match;
   const twoWay = arrow === '<->';
 
-  let target, event;
+  let targetStr, event;
   if (twoWay) {
     const parts = rightSide.split('@');
     if (parts.length !== 2) {
       throw new Error(`[miu] Two-way binding requires @event: ${binding}`);
     }
-    [target, event] = parts;
-    if (!target || !event) {
+    [targetStr, event] = parts;
+    if (!targetStr || !event) {
       throw new Error(`[miu] Two-way binding requires both target and event: ${binding}`);
     }
   } else {
     if (rightSide.includes('@')) {
       throw new Error(`[miu] One-way binding should not specify @event: ${binding}`);
     }
-    target = rightSide;
+    targetStr = rightSide;
   }
+
+  const target = parseBindTarget(targetStr, element);
 
   const storeAndPath = storePath.charAt(0) === SEL
     ? resolveStoreRef(ATTRS.BIND, storePath, getBindContext(element))
@@ -166,6 +168,58 @@ function parseBinding(binding, element) {
     target,
     twoWay,
     event,
+  };
+}
+
+/**
+ * Determines if a property should be set directly on an element vs using setAttribute.
+ * Walks up the prototype chain looking for properties that are either:
+ * 1. Defined with a setter function (like input.value)
+ * 2. Defined as writable properties (like element.style)
+ *
+ * @param {Element} element - DOM element to check
+ * @param {string} name - Name of property/attribute
+ * @returns {boolean} True if property should be set directly, false if setAttribute should be used
+ */
+function isPropSetable(element, name) {
+  let proto = element;
+  while (proto) {
+    const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+    if (descriptor && (descriptor.set || descriptor.writable)) {
+      return true;
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  return false;
+}
+
+/**
+ * Parses a binding target string into property or attribute binding configuration.
+ *
+ * @param {string} target - Binding target string (e.g., 'value', 'text', 'data-foo')
+ * @param {Element} element - DOM element the binding will be applied to
+ * @returns {Object} Parsed binding target:
+ *   - For properties: {type: 'property', name: string}
+ *   - For attributes: {type: 'attribute', name: string}
+ */
+function parseBindTarget(target, element) {
+  // Special handling for text binding.
+  if (target === 'text') {
+    return {
+      type: 'property',
+      name: 'textContent',
+    };
+  }
+
+  if (isPropSetable(element, target)) {
+    return {
+      type: 'property',
+      name: target,
+    };
+  }
+  return {
+    type: 'attribute',
+    name: target,
   };
 }
 
@@ -336,7 +390,7 @@ function storeSubscribe(element, bindConfig, subFn) {
   }
   const elementStoreSubs = storeSubs.get(element);
   const subKey = bindConfig.type === 'event' ?
-    `event:${bindConfig.event}` : `binding:${bindConfig.path}:${bindConfig.target}`;
+    `event:${bindConfig.event}` : `binding:${bindConfig.path}:${bindConfig.target.name}`;
   if (!elementStoreSubs.has(subKey)) {
     const unsub = subFn();
     elementStoreSubs.set(subKey, unsub);
@@ -357,7 +411,7 @@ function storeSubscribe(element, bindConfig, subFn) {
  *   type: ('binding'|'event'),
  *   store?: Store,
  *   path?: string,
- *   target?: string,
+ *   target?: {type: string, name: string},
  *   twoWay?: boolean,
  *   event?: string,
  *   fn?: Function,
@@ -368,122 +422,104 @@ function storeSubscribe(element, bindConfig, subFn) {
 function bindElement(element, bindConfigs) {
   for (const config of bindConfigs) {
     if (config.type === 'event') {
-      if (config.triggerStore) {
-        // Store value change trigger
-        storeSubscribe(element, config, () => {
-          return config.triggerStore.$subscribe(config.triggerPath, (value) => {
-            const event = new CustomEvent('store:change', {
-              detail: { path: config.triggerPath },
-            });
-            const bindCtx = getBindContext(element);
-            config.fn.call(config.store, event, bindCtx, value);
-          });
-        });
-      } else {
-        // DOM event trigger
-        addEventHandler(element, config.event, (event) => {
-          event.preventDefault();
-          const bindCtx = getBindContext(element);
-          config.fn.call(config.store, event, bindCtx);
-        });
-      }
-      continue;
-    }
-
-    // Get current value from store (or use key for loop bindings)
-    const value = config.key ?? config.store.$get(config.path);
-
-    if (config.target === 'text') {
-      bindText(element, config, value);
+      bindEvent(element, config);
     } else {
-      bindAttribute(element, config, value);
+      // Get current value from store (or use key for loop bindings)
+      const value = config.key ?? config.store.$get(config.path);
+      bindValue(element, config, value);
     }
+  }
+}
+
+/**
+ * Bind event handlers to an element, triggered by either DOM events or store value changes.
+ * For DOM events, calls the handler with (event, bindContext).
+ * For store triggers, calls the handler with (event, bindContext, value).
+ *
+ * @param {HTMLElement} element - The DOM element to bind
+ * @param {{
+ *   store?: Store,
+ *   fn: Function,
+ *   event?: string,
+ *   triggerStore?: Store,
+ *   triggerPath?: string
+ * }} config - Event binding configuration:
+ *   - For DOM events: specify event and fn
+ *   - For store triggers: specify triggerStore, triggerPath and fn
+ */
+function bindEvent(element, config) {
+  if (config.triggerStore) {
+    // Store value change trigger
+    storeSubscribe(element, config, () => {
+      return config.triggerStore.$subscribe(config.triggerPath, (value) => {
+        const event = new CustomEvent('store:change', {
+          detail: { path: config.triggerPath },
+        });
+        const bindCtx = getBindContext(element);
+        config.fn.call(config.store, event, bindCtx, value);
+      });
+    });
+  } else {
+    // DOM event trigger
+    addEventHandler(element, config.event, (event) => {
+      event.preventDefault();
+      const bindCtx = getBindContext(element);
+      config.fn.call(config.store, event, bindCtx);
+    });
   }
 }
 
 /**
  * Bind a store value change to update an element attribute or property (one-way),
- * and optionally the element's attribute or property value triggered by
- * config.event to update the store value (two-way) if config.twoWay is true.
- * For input elements, uses property binding for 'value' and 'checked'.
- * For other elements or attributes, uses attribute binding.
+ * and optionally bind element changes back to store (two-way).
  *
  * @param {HTMLElement} element - The DOM element to bind
  * @param {{
  *   store: Store,
  *   path: string,
- *   target: string,
+ *   target: {type: string, name: string},
  *   twoWay: boolean,
  *   event?: string
- * }} config - Configuration describing how to bind the element
- * @param {*} value - The current value to bind
+ * }} config - Binding configuration
+ * @param {*} value - Initial value to bind
  */
-function bindAttribute(element, config, value) {
-  // These attributes represent element state and should use properties
-  const useProperty = (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') &&
-    (config.target === 'value' || config.target === 'checked');
+function bindValue(element, config, value) {
+  const setter = config.target.type === 'property'
+    ? createPropertySetter(element, config.target.name)
+    : createAttributeSetter(element, config.target.name);
 
-  if (useProperty) {
-    const fn = (val) => {
-      val = getValue(config.store, element, val);
-      if (element[config.target] !== val) {
-        element[config.target] = val;
-      }
-    }
-    fn(value);
-    storeSubscribe(element, config, () => {
-      return config.store.$subscribe(config.path, fn);
-    });
+  setter(getValue(config.store, element, value));
+  storeSubscribe(element, config, () =>
+    config.store.$subscribe(config.path, val =>
+      setter(getValue(config.store, element, val))
+    )
+  );
 
-    if (config.twoWay) {
-      addEventHandler(element, config.event, (e) => {
-        config.store.$set(config.path, e.target[config.target]);
-      });
-    }
-  } else {
-    const fn = (val) => {
-      val = getValue(config.store, element, val);
-      if (element.getAttribute(config.target) !== val) {
-        element.setAttribute(config.target, val);
-      }
-    }
-    fn(value);
-    storeSubscribe(element, config, () => {
-      return config.store.$subscribe(config.path, fn);
-    });
+  if (config.twoWay) {
+    const getter = config.target.type === 'property'
+      ? e => e.target[config.target.name]
+      : e => e.target.getAttribute(config.target.name);
 
-    if (config.twoWay) {
-      addEventHandler(element, config.event, (e) => {
-        config.store.$set(config.path, e.target.getAttribute(config.target));
-      });
-    }
+    addEventHandler(element, config.event, e =>
+      config.store.$set(config.path, getter(e))
+    );
   }
 }
 
-/**
- * Bind a store value change to update an element's textContent property.
- *
- * @param {HTMLElement} element - The DOM element to bind
- * @param {{
- *   store: Store,
- *   path: string,
- *   target: string,
- *   twoWay: boolean,
- *   event?: string
- * }} config - Configuration describing how to bind the element
- * @param {*} value - The current value to bind
- */
-function bindText(element, config, value) {
-  const fn = (val) => {
-    val = getValue(config.store, element, val);
-    if (element.textContent !== val) {
-      element.textContent = val;
+function createPropertySetter(element, target) {
+  return val => {
+    if (element[target] !== val) {
+      element[target] = val;
     }
-  }
-  fn(value);
-  storeSubscribe(element, config, () => {
-    return config.store.$subscribe(config.path, fn);
-  });
+  };
+}
+
+function createAttributeSetter(element, target) {
+  return val => {
+    if (element.getAttribute(target) !== val) {
+      element.setAttribute(target, val);
+    }
+  };
 }
 
 // Return the value to set on the element. If the value is a function (computed value),
