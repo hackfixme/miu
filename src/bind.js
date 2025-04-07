@@ -97,7 +97,7 @@ function getBindContext(element) {
  *   type: ('binding'|'event'),
  *   store?: Store,
  *   path?: string,
- *   target?: {type: string, name: string},
+ *   target?: {type: string, name: string, path: string},
  *   twoWay?: boolean,
  *   event?: string,
  *   fn?: Function,
@@ -123,7 +123,7 @@ function parseBindAttr(el) {
  *   type: 'binding',
  *   store: Store,
  *   path: string,
- *   target: {type: string, name: string},
+ *   target: {type: string, name: string, path: string},
  *   twoWay: boolean,
  *   event?: string
  * }}
@@ -195,31 +195,38 @@ function isPropSetable(element, name) {
 
 /**
  * Parses a binding target string into property or attribute binding configuration.
+ * For properties that support direct assignment (like 'value' or 'style'), allows
+ * dot notation to access nested properties (e.g., 'style.color').
  *
- * @param {string} target - Binding target string (e.g., 'value', 'text', 'data-foo')
+ * @param {string} targetStr - Binding target string (e.g., 'value', 'text', 'style.color', 'data-foo')
  * @param {Element} element - DOM element the binding will be applied to
  * @returns {Object} Parsed binding target:
- *   - For properties: {type: 'property', name: string}
+ *   - For properties: {type: 'property', name: string, path: string|''} - path is an empty string if no nested access
  *   - For attributes: {type: 'attribute', name: string}
  */
-function parseBindTarget(target, element) {
+function parseBindTarget(targetStr, element) {
   // Special handling for text binding.
-  if (target === 'text') {
+  if (targetStr === 'text') {
     return {
       type: 'property',
       name: 'textContent',
+      path: '',
     };
   }
 
-  if (isPropSetable(element, target)) {
+  const [targetName, ...targetParts] = targetStr.split('.');
+  const targetPath = targetParts.join('.');
+  if (isPropSetable(element, targetName)) {
     return {
       type: 'property',
-      name: target,
+      name: targetName,
+      path: targetPath,
     };
   }
   return {
     type: 'attribute',
-    name: target,
+    name: targetStr,
+    path: '',
   };
 }
 
@@ -390,7 +397,7 @@ function storeSubscribe(element, bindConfig, subFn) {
   }
   const elementStoreSubs = storeSubs.get(element);
   const subKey = bindConfig.type === 'event' ?
-    `event:${bindConfig.event}` : `binding:${bindConfig.path}:${bindConfig.target.name}`;
+    `event:${bindConfig.event}` : `binding:${bindConfig.path}:${bindConfig.target.name}.${bindConfig.target.path}`;
   if (!elementStoreSubs.has(subKey)) {
     const unsub = subFn();
     elementStoreSubs.set(subKey, unsub);
@@ -411,7 +418,7 @@ function storeSubscribe(element, bindConfig, subFn) {
  *   type: ('binding'|'event'),
  *   store?: Store,
  *   path?: string,
- *   target?: {type: string, name: string},
+ *   target?: {type: string, name: string, path: string},
  *   twoWay?: boolean,
  *   event?: string,
  *   fn?: Function,
@@ -477,7 +484,7 @@ function bindEvent(element, config) {
  * @param {{
  *   store: Store,
  *   path: string,
- *   target: {type: string, name: string},
+ *   target: {type: string, name: string, path: string},
  *   twoWay: boolean,
  *   event?: string
  * }} config - Binding configuration
@@ -485,8 +492,8 @@ function bindEvent(element, config) {
  */
 function bindValue(element, config, value) {
   const setter = config.target.type === 'property'
-    ? createPropertySetter(element, config.target.name)
-    : createAttributeSetter(element, config.target.name);
+    ? createPropertySetter(element, config.target)
+    : createAttributeSetter(element, config.target);
 
   setter(getValue(config.store, element, value));
   storeSubscribe(element, config, () =>
@@ -507,17 +514,23 @@ function bindValue(element, config, value) {
 }
 
 function createPropertySetter(element, target) {
-  return val => {
-    if (element[target] !== val) {
-      element[target] = val;
-    }
-  };
+  return target.path
+    ? val => {
+        if (element[target.name][target.path] !== val) {
+          element[target.name][target.path] = val;
+        }
+      }
+    : val => {
+        if (element[target.name] !== val) {
+          element[target.name] = val;
+        }
+      };
 }
 
 function createAttributeSetter(element, target) {
   return val => {
-    if (element.getAttribute(target) !== val) {
-      element.setAttribute(target, val);
+    if (element.getAttribute(target.name) !== val) {
+      element.setAttribute(target.name, val);
     }
   };
 }

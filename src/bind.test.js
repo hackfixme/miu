@@ -244,6 +244,32 @@ describe('bind element', () => {
     expect(store.cls).toBe('updated-class'); // unchanged
   });
 
+  test('handles style bindings', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      color: '#ff0000',
+      bgColor: '#00ff00'
+    });
+
+    document.body.innerHTML = `
+      <p data-miu-bind="
+         ${storeName}.color->style.color
+         ${storeName}.bgColor->style.backgroundColor
+         "></p>
+    `;
+    bind(document.body, [store]);
+
+    // Check initial render
+    const item = document.querySelector('p');
+    expect(item.style.color).toBe('rgb(255, 0, 0)');
+    expect(item.style.backgroundColor).toBe('rgb(0, 255, 0)');
+
+    // Store updates UI
+    store.color = '#0000ff';
+    expect(item.style.color).toBe('rgb(0, 0, 255)');
+    expect(item.style.backgroundColor).toBe('rgb(0, 255, 0)');
+  });
+
   test('handles computed values', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
