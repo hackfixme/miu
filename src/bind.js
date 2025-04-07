@@ -88,7 +88,7 @@ function getBindContext(element) {
  * - "[storePath.]handler@event"
  * where:
  * - storePath: "<store name>.<path>" or "$[.<path>]" for loop references
- * - target: 'text' for textContent binding, or any valid attribute/property name
+ * - target: 'text' for text content binding, or any valid attribute/property name
  * - event: DOM event that triggers store updates or handler calls
  * - handler: Function reference in the store or in the global scope
  *
@@ -203,13 +203,14 @@ function isPropSetable(element, name) {
  * @returns {Object} Parsed binding target:
  *   - For properties: {type: 'property', name: string, path: string|''} - path is an empty string if no nested access
  *   - For attributes: {type: 'attribute', name: string}
+ *   - For text content: {type: 'text'}
  */
 function parseBindTarget(targetStr, element) {
   // Special handling for text binding.
   if (targetStr === 'text') {
     return {
-      type: 'property',
-      name: 'textContent',
+      type: 'text',
+      name: '',
       path: '',
     };
   }
@@ -491,9 +492,20 @@ function bindEvent(element, config) {
  * @param {*} value - Initial value to bind
  */
 function bindValue(element, config, value) {
-  const setter = config.target.type === 'property'
-    ? createPropertySetter(element, config.target)
-    : createAttributeSetter(element, config.target);
+  let setter;
+  switch (config.target.type) {
+    case 'property':
+      setter = createPropertySetter(element, config.target);
+      break;
+    case 'attribute':
+      setter = createAttributeSetter(element, config.target);
+      break;
+    case 'text':
+      setter = createTextSetter(element);
+      break;
+    default:
+      throw new Error(`[miu] Unsupported bind target type: ${config.target.type}`);
+  }
 
   setter(getValue(config.store, element, value));
   storeSubscribe(element, config, () =>
@@ -531,6 +543,20 @@ function createAttributeSetter(element, target) {
   return val => {
     if (element.getAttribute(target.name) !== val) {
       element.setAttribute(target.name, val);
+    }
+  };
+}
+
+function createTextSetter(element) {
+  return val => {
+    let textNode = Array.from(element.childNodes)
+      .find(node => node.nodeType === Node.TEXT_NODE);
+    if (!textNode) {
+      textNode = document.createTextNode('');
+      element.insertBefore(textNode, element.firstChild);
+    }
+    if (textNode.nodeValue !== val) {
+      textNode.nodeValue = val;
     }
   };
 }

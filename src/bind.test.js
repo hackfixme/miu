@@ -147,6 +147,23 @@ describe('bind element', () => {
     expect(store.checked).toBe(true);
   });
 
+  test('preserves child elements when setting text content', () => {
+    const storeName = `test-${randomString()}`;
+    const store = new Store(storeName, {
+      user: 'Alice',
+    });
+
+    document.body.innerHTML = `
+      <div data-miu-bind="${storeName}.user->text"><span>Bob</span></div>
+    `;
+    bind(document.body, [store]);
+
+    const parentEl = document.querySelector('div');
+    const childEl = document.querySelector('span');
+    expect(parentEl.textContent).toBe('AliceBob');
+    expect(childEl.textContent).toBe('Bob');
+  });
+
   test('supports multiple one-way bindings', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
