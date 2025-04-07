@@ -1,5 +1,3 @@
-import { stores } from './store.js';
-
 const ATTRS = {
   BIND:  'data-miu-bind',
   FOR:   'data-miu-for',
@@ -11,6 +9,14 @@ const SEL = '$';
 const KEY = `${SEL}key`;
 const VALUE = `${SEL}value`;
 const INDEX = `${SEL}index`;
+
+// Mapping of elements to a map of store names to Store instances. The elements
+// here will be root elements `bind` was originally called with.
+const stores = new WeakMap();
+
+// Mapping of elements to the root element they were bound from. This is used to
+// lookup the stores of child elements.
+const elementRoot = new WeakMap();
 
 // Mapping of parent for-loop element to items rendered in the loop.
 // Used to pass the correct element index to child event handlers.
@@ -34,7 +40,12 @@ function setupBindings(root) {
        ...root.querySelectorAll(forSelector)]
     : root.querySelectorAll(forSelector);
 
+  const rootEl = elementRoot.get(root) ?? root;
+
   for (const el of forElements) {
+    if (!elementRoot.has(el)) {
+      elementRoot.set(el, rootEl);
+    }
     const {store, path} = parseForAttr(el);
     bindForEach(el, store, path);
   };
@@ -47,6 +58,9 @@ function setupBindings(root) {
     : root.querySelectorAll(bindSelector);
 
   for (const el of bindElements) {
+    if (!elementRoot.has(el)) {
+      elementRoot.set(el, rootEl);
+    }
     const bindConfig = parseBindAttr(el);
     bindElement(el, bindConfig);
   };
@@ -112,7 +126,7 @@ function parseBindAttr(el) {
     .filter(Boolean) // filter out empty strings
     .map(binding => binding.includes('->')
       ? parseBinding(binding, el)
-      : parseEventBinding(binding));
+      : parseEventBinding(binding, el));
 }
 
 /**
@@ -160,7 +174,7 @@ function parseBinding(binding, element) {
 
   const storeAndPath = storePath.charAt(0) === SEL
     ? resolveStoreRef(ATTRS.BIND, storePath, getBindContext(element))
-    : getStoreAndPath(storePath);
+    : getStoreAndPath(element, storePath);
 
   return {
     ...storeAndPath,
@@ -246,7 +260,7 @@ function parseBindTarget(targetStr, element) {
  * @throws {Error} If binding format is invalid or handler is not found/not a function
  * @private
  */
-function parseEventBinding(binding) {
+function parseEventBinding(binding, element) {
   const parts = binding.split('@');
   if (parts.length !== 2) {
     throw new Error(`[miu] Invalid event binding syntax: ${binding}. Expected: storePath.handler@event or globalHandler@event`);
@@ -260,7 +274,7 @@ function parseEventBinding(binding) {
   let fn, store;
   // Get function reference from store or global scope
   if (fnRef.includes('.')) {
-    const storeAndPath = getStoreAndPath(fnRef);
+    const storeAndPath = getStoreAndPath(element, fnRef);
     store = storeAndPath.store;
     fn = store.$get(storeAndPath.path);
   } else {
@@ -274,7 +288,7 @@ function parseEventBinding(binding) {
   let triggerStore, triggerPath;
   // Handle store path triggers
   if (trigger.includes('.')) {
-    const { store, path } = getStoreAndPath(trigger);
+    const { store, path } = getStoreAndPath(element, trigger);
     triggerStore = store;
     triggerPath = path;
   }
@@ -310,7 +324,7 @@ function parseForAttr(el) {
     return resolveStoreRef(ATTRS.FOR, attrVal, bindCtx);
   }
 
-  return getStoreAndPath(attrVal);
+  return getStoreAndPath(el, attrVal);
 }
 
 function resolveStoreRef(attr, ref, bindCtx) {
@@ -361,16 +375,18 @@ function resolveStoreRef(attr, ref, bindCtx) {
   throw new Error(`[miu] Invalid store reference: ${ref}`);
 }
 
-function getStoreAndPath(storePath) {
+function getStoreAndPath(element, storePath) {
   const [storeName, ...pathParts] = storePath.split('.');
   const path = pathParts.join('.');
   if (!storeName || !path) {
     throw new Error(`[miu] Invalid path format: ${storePath}`);
   }
 
-  const store = stores.get(storeName);
+  const rootEl = elementRoot.get(element);
+  const elStores = stores.get(rootEl);
+  const store = elStores?.get(storeName);
   if (!store) {
-    throw new Error(`[miu] Store not found: ${storeName}`);
+    throw new Error(`[miu] Store ${storeName} not found for element ${element.tagName}`);
   }
 
   return { store, path };
@@ -658,6 +674,7 @@ function bindForEach(element, store, path) {
         const clone = document.importNode(template.content, true);
         element.appendChild(clone);
         el = element.lastElementChild;
+        elementRoot.set(el, elementRoot.get(element));
       }
 
       // Set the index of this item so that it can be used to retrieve the
@@ -701,12 +718,17 @@ function bind(element, newStores) {
   const el = typeof element === 'string' ? document.querySelector(element) : element;
   if (!el) throw new Error('[miu] Element not found');
 
-  for (const store of newStores) {
-    if (stores.has(store.$name)) {
-      throw new Error(`[miu] Store with name "${store.$name}" already exists`);
-    }
-    stores.set(store.$name, store);
+  if (!stores.has(el)) {
+    stores.set(el, new Map());
   }
+  const elStores = stores.get(el);
+  for (const store of newStores) {
+    if (elStores.has(store.$name)) {
+      throw new Error(`[miu] Store with name "${store.$name}" already exists for element ${el.tagName}`);
+    }
+    elStores.set(store.$name, store);
+  }
+  stores.set(el, elStores);
 
   setupBindings(el);
 }

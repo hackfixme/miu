@@ -261,6 +261,46 @@ describe('bind element', () => {
     expect(store.cls).toBe('updated-class'); // unchanged
   });
 
+  test('supports binding different stores to different elements', () => {
+    const storeName1 = `test-${randomString()}`;
+    const store1 = new Store(storeName1, {
+      parent: 'Alice'
+    });
+    const storeName2 = `test-${randomString()}`;
+    const store2 = new Store(storeName2, {
+      parent: 'Bob',
+      child: 'Charlie'
+    });
+
+    document.body.innerHTML = `
+      <span id="el1" data-miu-bind="${storeName1}.parent->text"></span>
+      <div  id="el2" data-miu-bind="${storeName2}.parent->text"><span data-miu-bind="${storeName2}.child->text"></span></div>
+    `;
+    bind('#el1', [store1]);
+    bind('#el2', [store2]);
+    bind('#el2 > span', [store2]);
+
+    const el1 = document.querySelector('#el1');
+    const el2 = document.querySelector('#el2');
+    const el2Child = document.querySelector('#el2 > span');
+
+    // Check initial render
+    expect(el1.textContent).toBe('Alice');
+    expect(el2.textContent).toBe('BobCharlie');
+    expect(el2Child.textContent).toBe('Charlie');
+
+    // Store updates UI
+    store2.child = 'Charlie updated'
+    expect(el1.textContent).toBe('Alice');
+    expect(el2.textContent).toBe('BobCharlie updated');
+    expect(el2Child.textContent).toBe('Charlie updated');
+
+    store2.parent = 'Bob updated'
+    expect(el1.textContent).toBe('Alice');
+    expect(el2.textContent).toBe('Bob updatedCharlie updated');
+    expect(el2Child.textContent).toBe('Charlie updated');
+  });
+
   test('handles style bindings', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {

@@ -389,7 +389,4 @@ class Store {
   }
 }
 
-// Global map of store name to Store instance.
-const stores = new Map();
-
-export { Store, stores };
+export { Store };
