@@ -288,6 +288,20 @@ class SubscriptionManager {
   }
 }
 
+const IS_PROXY = Symbol('isProxy');
+
+/**
+ * Check if an object is proxied
+ * @param {Object} obj - Object to check
+ * @returns {boolean} True if object is proxied
+ */
+function isProxied(obj) {
+  if (obj !== null && typeof obj === 'object') {
+    return !!obj[IS_PROXY];
+  }
+  return false;
+}
+
 /**
  * Creates and manages proxy objects for reactive state
  * @class
@@ -307,12 +321,37 @@ class ProxyManager {
    * @returns {Proxy|any} Proxied object or original value if not an object
    */
   createProxy(obj, path = '') {
-    // Don't proxy primitive values
-    if (typeof obj !== 'object' || obj === null) {
+    // Don't proxy primitives or already-proxied objects
+    if (obj === null || typeof obj !== 'object' || obj[IS_PROXY]) {
       return obj;
     }
 
-    return new Proxy(obj, this.createHandler(path));
+    // Recursively create proxies for all nested values
+    if (obj instanceof Map) {
+      for (const [key, value] of obj.entries()) {
+        obj.set(key, this.createProxy(value, `${path}[${key}]`));
+      }
+    } else if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i++) {
+        obj[i] = this.createProxy(obj[i], `${path}[${i}]`);
+      }
+    } else {
+      for (const [key, value] of Object.entries(obj)) {
+        obj[key] = this.createProxy(value, path ? `${path}.${key}` : key);
+      }
+    }
+
+    const proxy = new Proxy(obj, this.createHandler(path));
+
+    // Mark this proxy to prevent double-wrapping
+    Object.defineProperty(proxy, IS_PROXY, {
+      value: true,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
+
+    return proxy;
   }
 
   /**
@@ -328,12 +367,6 @@ class ProxyManager {
           return deepCopy(target);
         }
 
-        if (typeof prop === 'symbol') {
-          return target[prop];
-        }
-
-        const value = target[prop];
-
         if (target instanceof Map) {
           return this.handleMap(target, prop, path);
         }
@@ -342,13 +375,7 @@ class ProxyManager {
           return this.handleArrayMethods(target, prop, path);
         }
 
-        const newPath = path ? `${path}.${prop}` : prop;
-        // Recursively create proxies for nested objects
-        if (typeof value === 'object' && value !== null) {
-          return this.createProxy(value, newPath);
-        }
-
-        return value;
+        return target[prop];
       },
 
       set: (target, prop, value) => {
@@ -357,8 +384,8 @@ class ProxyManager {
         }
 
         const newPath = path ? `${path}.${prop}` : prop;
-        target[prop] = value;
-        this.notifyListeners(newPath, value);
+        target[prop] = this.createProxy(value, newPath);
+        this.notifyListeners(newPath, target[prop]);
 
         // Only notify parent for Map changes
         if (target instanceof Map) {
@@ -392,8 +419,13 @@ class ProxyManager {
    */
   handleArrayMethods(target, prop, path) {
     return (...args) => {
+      // Arguments to methods that can add new values to the array must be proxied first.
+      if (['push', 'unshift', 'splice', 'fill', 'concat'].includes(prop)) {
+        args = args.map(arg => this.createProxy(arg, path));
+      }
       const result = Array.prototype[prop].apply(target, args);
-      if (['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(prop)) {
+      if (['push', 'pop', 'shift', 'unshift', 'splice', 'fill', 'sort', 'reverse',
+           'concat', 'copyWithin'].includes(prop)) {
         this.notifyListeners(path, target);
       }
       return result;
@@ -421,11 +453,11 @@ class ProxyManager {
       throw new Error(`[miu] Invalid array index: ${prop}`);
     }
 
-    target[prop] = value;
     const newPath = `${path}[${prop}]`;
+    target[prop] = this.createProxy(value, newPath);
 
     // Notify both the specific element and the array itself
-    this.notifyListeners(newPath, value);
+    this.notifyListeners(newPath, target[prop]);
     this.notifyListeners(path, target);
 
     return true;
@@ -441,16 +473,11 @@ class ProxyManager {
    */
   handleMap(target, prop, path) {
     const mapOperations = {
-      get: (key) => {
-        const value = target.get(key);
-        return typeof value === 'object' && value !== null
-          ? this.createProxy(value, `${path}[${key}]`)
-          : value;
-      },
+      get: (key) => target.get(key),
 
       set: (key, value) => {
-        target.set(key, value);
-        this.notifyListeners(`${path}[${key}]`, value);
+        target.set(key, this.createProxy(value, `${path}[${key}]`));
+        this.notifyListeners(`${path}[${key}]`, target.get(key));
         this.notifyListeners(path, target);
         return target;
       },
@@ -485,9 +512,27 @@ class ProxyManager {
       return target[prop].bind(target);
     }
 
+    // Return values from own and built-in properties directly
+    if (Object.prototype.hasOwnProperty.call(target, prop) ||
+        prop in Object.getPrototypeOf(target)) {
+      return target[prop];
+    }
+
     // Direct property access on Map becomes Map.get()
     return target.get(prop);
   }
 }
 
 export { Store };
+
+export let internals;
+
+// Test-only exports
+if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
+  internals = {
+    PathOperations,
+    SubscriptionManager,
+    ProxyManager,
+    isProxied
+  };
+}

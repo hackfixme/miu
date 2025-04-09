@@ -1,5 +1,7 @@
-import { describe, test, expect, beforeEach } from 'vitest';
-import { Store } from './store.js';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { Store, internals } from './store.js';
+
+const isProxied = internals.isProxied;
 
 describe('Store', () => {
   const createTestStore = () => new Store('testStore', {
@@ -198,6 +200,9 @@ describe('Store', () => {
       test('creates intermediate objects for non-existent paths', () => {
         store.$set('deeply.nested.value', 42);
         expect(store.deeply.nested.value).toBe(42);
+        expect(isProxied(store.deeply)).toBe(true);
+        expect(isProxied(store.deeply.nested)).toBe(true);
+        expect(isProxied(store.deeply.nested.value)).toBe(false);
       });
 
       test('allows setting Array.length', () => {
@@ -530,7 +535,23 @@ describe('Store', () => {
         store.$subscribe('', (value) => changes.push(value));
 
         store.user.name = 'Jane';
-        expect(changes).toEqual([store.$data]);
+
+        // We're not doing a check against store.$data, since the notified value
+        // will contain proxied values which breaks equality checks. So we check
+        // individual data structures instead.
+
+        expect(changes).toHaveLength(1);
+        const change = changes[0];
+        expect(Object.keys(change)).toEqual(['user', 'items', 'userMap']);
+
+        expect(change.user).toEqual({
+          name: 'Jane',
+          settings: { theme: 'light' }
+        });
+        expect(change.items).toEqual(['a', 'b', 'c']);
+        expect(Array.from(change.userMap.entries())).toEqual([
+          ['u1', { role: 'admin' }]
+        ]);
       });
 
       test('notifies all relevant subscribers when value changes', () => {
@@ -670,5 +691,382 @@ describe('Store', () => {
       expect(() => { store.items[-1] = 'x'; }).toThrow('Invalid array index');
       expect(() => { store.items[999] = 'x'; }).toThrow('Invalid array index');
     });
+  });
+});
+
+
+describe('ProxyManager', () => {
+  let proxyManager;
+
+  beforeEach(() => {
+    const notifyListeners = vi.fn();
+    proxyManager = new internals.ProxyManager(notifyListeners);
+  });
+
+  test('creates proxy only once for the same object', () => {
+    const obj = { name: 'test' };
+    const proxy1 = proxyManager.createProxy(obj);
+    const proxy2 = proxyManager.createProxy(proxy1);
+
+    expect(isProxied(proxy1)).toBe(true);
+    expect(proxy1).toBe(proxy2);
+  });
+
+  describe('Object handling', () => {
+    test('notifies listeners correctly for object operations', () => {
+      const obj = { name: 'test' };
+      const proxy = proxyManager.createProxy(obj);
+
+      // Set new property
+      proxy.age = 25;
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('age', 25);
+
+      // Modify existing
+      proxy.name = 'changed';
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('name', 'changed');
+
+      // Delete property
+      delete proxy.name;
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('name', undefined);
+    });
+
+    test('handles nested object operations correctly', () => {
+      const obj = { user: { name: 'test' } };
+      const proxy = proxyManager.createProxy(obj);
+
+      proxy.user.name = 'changed';
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('user.name', 'changed');
+
+      // Add nested property
+      proxy.user.age = 25;
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('user.age', 25);
+
+      // Delete nested property
+      delete proxy.user.name;
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('user.name', undefined);
+    });
+
+    test('handles special property types correctly', () => {
+      const obj = { name: 'test' };
+      const proxy = proxyManager.createProxy(obj);
+
+      // Setting same value should still notify
+      proxy.name = 'test';
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('name', 'test');
+
+      // Setting undefined
+      proxy.undefinedProp = undefined;
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('undefinedProp', undefined);
+
+      // Symbol properties should notify like normal properties
+      const symbol = Symbol('test');
+      proxy[symbol] = 'symbol';
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith(symbol, 'symbol');
+    });
+  });
+
+  describe('Array handling', () => {
+    test('basic array operations preserve proxy state', () => {
+      const nested = { value: 42 };
+      const arr = [1, nested, 3];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+      expect(isProxied(proxy)).toBe(true);
+
+      // Direct access should return same nested proxy
+      const proxyNested = proxy[1];
+      expect(isProxied(proxyNested)).toBe(true);
+      expect(proxy[1]).toBe(proxyNested);
+
+      // Direct modification
+      proxy[1] = { value: 43 };
+      expect(isProxied(proxy[1])).toBe(true);
+      expect(arr[1].value).toBe(43);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr[1]', proxy[1]);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('basic array operations preserve proxy state', () => {
+      const nested = { value: 42 };
+      const arr = [1, nested, 3];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+
+      // Direct access should return same nested proxy
+      const proxyNested = proxy[1];
+      expect(isProxied(proxyNested)).toBe(true);
+      expect(proxy[1]).toBe(proxyNested);
+
+      // Direct modification
+      proxy[1] = { value: 43 };
+      expect(isProxied(proxy[1])).toBe(true);
+      expect(arr[1].value).toBe(43);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr[1]', proxy[1]);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('array push/pop operations', () => {
+      const arr = [{ x: 1 }];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+      const original = proxy[0];
+
+      // push
+      proxy.push({ y: 2 });
+      expect(isProxied(proxy[1])).toBe(true);
+      expect(proxy[0]).toBe(original);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+
+      // pop
+      const popped = proxy.pop();
+      expect(isProxied(popped)).toBe(true);
+      expect(proxy[0]).toBe(original);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('array shift/unshift operations', () => {
+      const arr = [{ x: 1 }, { x: 2 }];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+      const original1 = proxy[0];
+      const original2 = proxy[1];
+
+      // unshift
+      proxy.unshift({ x: 0 });
+      expect(isProxied(proxy[0])).toBe(true);
+      expect(proxy[1]).toBe(original1);
+      expect(proxy[2]).toBe(original2);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+
+      // shift
+      const shifted = proxy.shift();
+      expect(isProxied(shifted)).toBe(true);
+      expect(proxy[0]).toBe(original1);
+      expect(proxy[1]).toBe(original2);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('array splice operations', () => {
+      const arr = [{ x: 1 }, { x: 2 }, { x: 3 }];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+      const original1 = proxy[0];
+      const original2 = proxy[1];
+      const original3 = proxy[2];
+
+      // splice - remove and insert
+      const removed = proxy.splice(1, 1, { x: 4 }, { x: 5 });
+
+      // Check removed elements are proxied
+      expect(isProxied(removed[0])).toBe(true);
+      expect(removed[0]).toBe(original2);
+
+      // Check remaining original elements are same proxies
+      expect(proxy[0]).toBe(original1);
+      expect(proxy[3]).toBe(original3);
+
+      // Check new elements are proxied
+      expect(isProxied(proxy[1])).toBe(true);
+      expect(isProxied(proxy[2])).toBe(true);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('array sort/reverse operations', () => {
+      const arr = [{ x: 1 }, { x: 2 }, { x: 3 }];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+      const original1 = proxy[0];
+      const original2 = proxy[1];
+      const original3 = proxy[2];
+
+      // reverse
+      proxy.reverse();
+      expect(proxy[0]).toBe(original3);
+      expect(proxy[1]).toBe(original2);
+      expect(proxy[2]).toBe(original1);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+
+      // sort (by x value)
+      proxy.sort((a, b) => a.x - b.x);
+      expect(proxy[0]).toBe(original1);
+      expect(proxy[1]).toBe(original2);
+      expect(proxy[2]).toBe(original3);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('array fill operations', () => {
+      const arr = [{ x: 1 }, { x: 2 }, { x: 3 }];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+
+      proxy.fill({ y: 42 }, 1, 3);
+      expect(isProxied(proxy[1])).toBe(true);
+      expect(isProxied(proxy[2])).toBe(true);
+      expect(proxy[1].y).toBe(42);
+      expect(proxy[2].y).toBe(42);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('array concat operations', () => {
+      const arr1 = [{ x: 1 }];
+      const arr2 = [{ x: 2 }];
+      const proxy = proxyManager.createProxy(arr1, 'arr');
+
+      const result = proxy.concat(arr2);
+      expect(Array.isArray(result)).toBe(true);
+      expect(isProxied(result[0])).toBe(true);
+      expect(isProxied(result[1])).toBe(true);
+      expect(result[0].x).toBe(1);
+      expect(result[1].x).toBe(2);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('array copyWithin operations', () => {
+      const arr = [{ x: 1 }, { x: 2 }, { x: 3 }, { x: 4 }];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+      const original1 = proxy[0];
+      const original2 = proxy[1];
+
+      proxy.copyWithin(2, 0, 2);
+      expect(proxy[2]).toEqual({ x: 1 });
+      expect(proxy[3]).toEqual({ x: 2 });
+      expect(proxy[0]).toBe(original1);
+      expect(proxy[1]).toBe(original2);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+  });
+
+  describe('Map handling', () => {
+    test('basic Map operations preserve proxy state', () => {
+      const nested = { value: 42 };
+      const map = new Map([['key1', nested]]);
+      const proxy = proxyManager.createProxy(map);
+
+      // Direct access should return same nested proxy
+      const proxyNested = proxy.get('key1');
+      expect(isProxied(proxyNested)).toBe(true);
+      expect(proxy.get('key1')).toBe(proxyNested);
+
+      // Direct modification
+      proxy.set('key1', { value: 43 });
+      expect(isProxied(proxy.get('key1'))).toBe(true);
+      expect(map.get('key1').value).toBe(43);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key1]', { value: 43 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+    });
+
+    test('Map iterator methods preserve proxy state', () => {
+      const map = new Map([
+        ['key1', { x: 1 }],
+        ['key2', { x: 2 }]
+      ]);
+      const proxy = proxyManager.createProxy(map);
+
+      for (const [key, value] of proxy.entries()) {
+        expect(isProxied(value)).toBe(true);
+      }
+
+      for (const value of proxy.values()) {
+        expect(isProxied(value)).toBe(true);
+      }
+
+      proxy.forEach((value) => {
+        expect(isProxied(value)).toBe(true);
+      });
+    });
+
+    test('Map modifications return consistent proxies', () => {
+      const map = new Map([['key1', { x: 1 }]]);
+      const proxy = proxyManager.createProxy(map);
+      const original = proxy.get('key1');
+
+      // set same key
+      proxy.set('key1', { x: 2 });
+      const newValue = proxy.get('key1');
+      expect(isProxied(newValue)).toBe(true);
+      expect(newValue).not.toBe(original);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key1]', { x: 2 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+
+      // delete and set
+      proxy.delete('key1');
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key1]', undefined);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+
+      proxy.set('key1', { x: 3 });
+      expect(isProxied(proxy.get('key1'))).toBe(true);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key1]', { x: 3 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+
+      // clear and set
+      proxy.clear();
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key1]', undefined);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+
+      proxy.set('key2', { x: 4 });
+      expect(isProxied(proxy.get('key2'))).toBe(true);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key2]', { x: 4 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+    });
+
+    test('Map size and existence checks', () => {
+      const map = new Map([['key1', { x: 1 }]]);
+      const proxy = proxyManager.createProxy(map);
+
+      expect(proxy.size).toBe(1);
+      expect(proxy.has('key1')).toBe(true);
+
+      proxy.delete('key1');
+      expect(proxy.size).toBe(0);
+      expect(proxy.has('key1')).toBe(false);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key1]', undefined);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+
+      proxy.set('key2', { x: 2 });
+      expect(proxy.size).toBe(1);
+      expect(proxy.has('key2')).toBe(true);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key2]', { x: 2 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+    });
+
+    test('Map operations with nested paths', () => {
+      const map = new Map();
+      const proxy = proxyManager.createProxy(map, 'nested');
+
+      proxy.set('key1', { x: 1 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('nested[key1]', { x: 1 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('nested', map);
+
+      proxy.delete('key1');
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('nested[key1]', undefined);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('nested', map);
+    });
+
+    test('Map operations require method calls for modifications', () => {
+      const map = new Map([['key1', { x: 1 }]]);
+      const proxy = proxyManager.createProxy(map);
+
+      // Get works with dot notation
+      expect(proxy.key1).toEqual({ x: 1 });
+      expect(isProxied(proxy.key1)).toBe(true);
+
+      // Set requires method call
+      proxy.key2 = { x: 2 };  // Should not work
+      expect(map.has('key2')).toBe(false);
+
+      // Proper way to set
+      proxy.set('key2', { x: 2 });
+      expect(map.get('key2')).toEqual({ x: 2 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key2]', { x: 2 });
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
+    });
+  });
+
+  test('proxy handles primitive values', () => {
+    const num = 42;
+    const str = 'test';
+    const bool = true;
+    const nil = null;
+    const undef = undefined;
+
+    // Primitives should be returned as-is
+    expect(proxyManager.createProxy(num)).toBe(42);
+    expect(proxyManager.createProxy(str)).toBe('test');
+    expect(proxyManager.createProxy(bool)).toBe(true);
+    expect(proxyManager.createProxy(nil)).toBe(null);
+    expect(proxyManager.createProxy(undef)).toBe(undefined);
   });
 });
