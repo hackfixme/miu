@@ -48,11 +48,18 @@ class Store {
       throw new Error('[miu] Store name must be a string');
     }
 
-    const listeners = new Map();
-    const pathOps = this._createPathOps();
-    const state = this._createState(initialState, listeners, pathOps);
-    const api = this._createAPI(state, listeners, pathOps);
-    api.$name = name;
+    const pathOps = PathOperations.create();
+    const subMgr = new SubscriptionManager(initialState, pathOps);
+    const proxyMgr = new ProxyManager(
+      (path, value) => subMgr.notify(path, value),
+    );
+
+    const state = proxyMgr.createProxy(initialState);
+    const api = this._createAPI(
+      name, state,
+      (path, callback) => subMgr.subscribe(path, callback),
+      pathOps,
+    );
 
     return new Proxy(api, {
       get: (target, prop) => {
@@ -72,14 +79,47 @@ class Store {
   }
 
   /**
-   * Creates path operation utilities for getting and setting nested values using JSONPath-like syntax
+   * Creates the public API methods for the store
    * @private
+   * @param {string} name - Store name
+   * @param {Object} state - Store state object
+   * @param {function(string, function): function} subscribe - Function to create store subscriptions
+   * @param {Object} pathOps - Path operation utilities
+   * @returns {Object} Store API methods
+   */
+  _createAPI(name, state, subscribe, pathOps) {
+    return {
+      $get: (path) => {
+        PathOperations.validatePath(path);
+        return pathOps.get(state, path);
+      },
+      $set: (path, value) => {
+        PathOperations.validatePath(path);
+        pathOps.set(state, path, value);
+      },
+      $subscribe: (path, callback) => {
+        PathOperations.validatePath(path);
+        return subscribe(path, callback);
+      },
+      get $data() { return deepCopy(state); },
+      get $name() { return name; }
+    };
+  }
+}
+
+/**
+ * Handles path-based operations and validation for accessing nested state
+ * @class
+ */
+class PathOperations {
+  /**
+   * Creates path operation utilities for getting and setting nested values
    * @returns {{
    *   get: (obj: Object, path: string) => any,
    *   set: (obj: Object, path: string, value: any) => void
    * }}
    */
-  _createPathOps() {
+  static create() {
     return {
       get: (obj, path) => {
         return path
@@ -123,7 +163,7 @@ class Store {
    * @param {string} path - Path to validate
    * @throws {Error} If path syntax is invalid
    */
-  _validatePath(path) {
+  static validatePath(path) {
     if (typeof path === 'undefined') {
       throw new Error('[miu] path is undefined');
     }
@@ -146,201 +186,166 @@ class Store {
       throw new Error('[miu] Invalid path syntax');
     }
   }
+}
+
+/**
+ * Manages subscriptions and notifications for state changes
+ * @class
+ */
+class SubscriptionManager {
+  /**
+   * @param {Object} rootState - Root state object
+   * @param {Object} pathOps - Path operation utilities
+   */
+  constructor(rootState, pathOps) {
+    this.pathOps = pathOps;
+    this.rootState = rootState;
+    this.listeners = new Map();
+  }
 
   /**
-   * Creates the public API methods for the store
-   * @private
-   * @param {Object} state - Store state object
-   * @param {Map} listeners - Map of path-based subscribers
-   * @param {Object} pathOps - Path operation utilities
-   * @returns {Object} Store API methods
+   * Subscribes to changes at a specific path
+   * @param {string} path - Path to subscribe to
+   * @param {function} callback - Callback to invoke on changes
+   * @returns {function} Unsubscribe function
    */
-  _createAPI(state, listeners, pathOps) {
-    return {
-      $get: (path) => {
-        this._validatePath(path);
-        return pathOps.get(state, path);
-      },
-      $set: (path, value) => {
-        this._validatePath(path);
-        pathOps.set(state, path, value);
-      },
-      $subscribe: (path, callback) => {
-        this._validatePath(path);
+  subscribe(path, callback) {
+    if (!this.listeners.has(path)) {
+      this.listeners.set(path, new Set());
+    }
+    this.listeners.get(path).add(callback);
 
-        if (!listeners.has(path)) {
-          listeners.set(path, new Set());
-        }
-        listeners.get(path).add(callback);
-
-        return () => {
-          listeners.get(path).delete(callback);
-          if (listeners.get(path).size === 0) {
-            listeners.delete(path);
-          }
-        };
-      },
-      get $data() { return deepCopy(state); }
+    return () => {
+      this.listeners.get(path).delete(callback);
+      if (this.listeners.get(path).size === 0) {
+        this.listeners.delete(path);
+      }
     };
   }
 
   /**
-   * Creates a reactive state object with proxy-based tracking
-   * @private
-   * @param {Object} initialState - Initial state object
-   * @param {Map} listeners - Map of path-based subscribers
-   * @param {Object} pathOps - Path operation utilities
-   * @returns {Proxy} Proxied state object
+   * Notifies subscribers of state changes
+   * @param {string} path - Path where change occurred
+   * @param {any} value - New value at path
    */
-  _createState(initialState, listeners, pathOps) {
-    const notifyListeners = (path, value) => {
-      // Notify root subscribers
-      if (listeners.has('')) {
-        listeners.get('').forEach(callback => callback(initialState));
+  notify(path, value) {
+    this.notifyRootListeners();
+    this.notifyExactPathListeners(path, value);
+    this.notifyChildListeners(path);
+    this.notifyParentListeners(path);
+  }
+
+  /**
+   * Notifies subscribers listening to the root state
+   */
+  notifyRootListeners() {
+    if (this.listeners.has('')) {
+      this.listeners.get('').forEach(callback => callback(this.rootState));
+    }
+  }
+
+  /**
+   * Notifies subscribers listening to exact path
+   * @param {string} path - Path where change occurred
+   * @param {any} value - New value at path
+   */
+  notifyExactPathListeners(path, value) {
+    if (this.listeners.has(path)) {
+      this.listeners.get(path).forEach(callback => callback(value));
+    }
+  }
+
+  /**
+   * Notifies subscribers listening to child paths
+   * E.g. changes to 'user' should notify 'user.name' subscribers.
+   * @param {string} path - Parent path where change occurred
+   */
+  notifyChildListeners(path) {
+    // TODO: Optimize this to avoid looping over all listeners.
+    for (const [listenerPath, callbacks] of this.listeners) {
+      if (listenerPath.startsWith(path + '.')) {
+        const childValue = this.pathOps.get(this.rootState, listenerPath);
+        callbacks.forEach(callback => callback(childValue));
       }
+    }
+  }
 
-      // Notify exact path matches
-      if (listeners.has(path)) {
-        listeners.get(path).forEach(callback => callback(value));
+  /**
+   * Notifies subscribers listening to parent paths
+   * E.g. changes to 'user.name' should notify 'user' subscribers.
+   * @param {string} path - Child path where change occurred
+   */
+  notifyParentListeners(path) {
+    const parts = path.split('.');
+    while (parts.length > 1) {
+      parts.pop();
+      const parentPath = parts.join('.');
+      if (this.listeners.has(parentPath)) {
+        const parentValue = this.pathOps.get(this.rootState, parentPath);
+        this.listeners.get(parentPath).forEach(callback => callback(parentValue));
       }
+    }
+  }
+}
 
-      // Notify child subscribers on parent changes.
-      // E.g. changes to 'user' should notify 'user.name' subscribers.
-      // TODO: Optimize this to avoid looping over all listeners.
-      for (const [listenerPath, callbacks] of listeners) {
-        if (listenerPath.startsWith(path + '.')) {
-          const childValue = pathOps.get(initialState, listenerPath);
-          callbacks.forEach(callback => callback(childValue));
-        }
-      }
+/**
+ * Creates and manages proxy objects for reactive state
+ * @class
+ */
+class ProxyManager {
+  /**
+   * @param {function(string, any): void} notifyListeners - Callback for state changes
+   */
+  constructor(notifyListeners) {
+    this.notifyListeners = notifyListeners;
+  }
 
-      // If no exact or child matches, check parent paths.
-      // E.g. changes to 'user.name' should notify 'user' subscribers.
-      const parts = path.split('.');
-      while (parts.length > 1) {
-        parts.pop();
-        const parentPath = parts.join('.');
-        if (listeners.has(parentPath)) {
-          const parentValue = pathOps.get(initialState, parentPath);
-          listeners.get(parentPath).forEach(callback => callback(parentValue));
-        }
-      }
-    };
+  /**
+   * Creates a proxy for an object with reactive capabilities
+   * @param {Object} obj - Object to make reactive
+   * @param {string} [path=''] - Current path in object tree
+   * @returns {Proxy|any} Proxied object or original value if not an object
+   */
+  createProxy(obj, path = '') {
+    // Don't proxy primitive values
+    if (typeof obj !== 'object' || obj === null) {
+      return obj;
+    }
 
-    const handleArrayMethods = (target, prop, path) => {
-      return (...args) => {
-        const result = Array.prototype[prop].apply(target, args);
-        if (['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(prop)) {
-          notifyListeners(path, target);
-        }
-        return result;
-      };
-    };
+    return new Proxy(obj, this.createHandler(path));
+  }
 
-    const handleArraySet = (target, prop, value, path) => {
-      if (prop === 'length') {
-        target.length = value;
-        notifyListeners(path, target);
-        return true;
-      }
-
-      const index = parseInt(prop, 10);
-      if (isNaN(index) || index < 0 || index > target.length-1) {
-        throw new Error(`[miu] Invalid array index: ${prop}`);
-      }
-
-      target[prop] = value;
-      const newPath = `${path}[${prop}]`;
-
-      // Notify both the specific element and the array itself
-      notifyListeners(newPath, value);
-      notifyListeners(path, target);
-
-      return true;
-    };
-
-    const handleMap = (target, prop, path) => {
-      const mapOperations = {
-        // Maintain reactivity for Map.get
-        get: (key) => {
-          const value = target.get(key);
-          return typeof value === 'object' && value !== null
-            ? createProxy(value, `${path}[${key}]`)
-            : value;
-        },
-
-        // Trigger notifications on Map.set
-        set: (key, value) => {
-          target.set(key, value);
-          notifyListeners(`${path}[${key}]`, value);
-          notifyListeners(path, target);
-          return target;
-        },
-
-        // Trigger notifications on Map.delete
-        delete: (key) => {
-          const hadKey = target.has(key);
-          const result = target.delete(key);
-          if (hadKey) {
-            notifyListeners(`${path}[${key}]`, undefined);
-            notifyListeners(path, target);
-          }
-          return result;
-        },
-
-        // Trigger notifications on Map.clear
-        clear: () => {
-          const keys = Array.from(target.keys());
-          target.clear();
-          // Notify all existing entry paths
-          keys.forEach(key => notifyListeners(`${path}[${key}]`, undefined));
-          // Notify the Map itself
-          notifyListeners(path, target);
-          return undefined;
-        }
-      };
-
-      if (prop in mapOperations) {
-        return mapOperations[prop];
-      }
-
-      // For other built-in methods, bind them to the Map
-      if (typeof target[prop] === 'function') {
-        return target[prop].bind(target);
-      }
-
-      // Direct property access on Map becomes Map.get()
-      return target.get(prop);
-    };
-
-    const createProxyHandler = (path) => ({
+  /**
+   * Creates a proxy handler for reactive objects
+   * @param {string} path - Current path in object tree
+   * @returns {ProxyHandler} Proxy handler object
+   * @private
+   */
+  createHandler(path) {
+    return {
       get: (target, prop) => {
         if (prop === '$data') {
           return deepCopy(target);
         }
 
+        if (typeof prop === 'symbol') {
+          return target[prop];
+        }
+
         const value = target[prop];
 
-        if (typeof value === 'function' && value.constructor.name === 'get') {
-          return value.call(target);
-        }
-
-        if (typeof prop === 'symbol') {
-          return value;
-        }
-
         if (target instanceof Map) {
-          return handleMap(target, prop, path);
+          return this.handleMap(target, prop, path);
         }
 
         if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
-          return handleArrayMethods(target, prop, path);
+          return this.handleArrayMethods(target, prop, path);
         }
 
         const newPath = path ? `${path}.${prop}` : prop;
         // Recursively create proxies for nested objects
         if (typeof value === 'object' && value !== null) {
-          return createProxy(value, newPath);
+          return this.createProxy(value, newPath);
         }
 
         return value;
@@ -348,16 +353,16 @@ class Store {
 
       set: (target, prop, value) => {
         if (Array.isArray(target)) {
-          return handleArraySet(target, prop, value, path);
+          return this.handleArraySet(target, prop, value, path);
         }
 
         const newPath = path ? `${path}.${prop}` : prop;
         target[prop] = value;
-        notifyListeners(newPath, value);
+        this.notifyListeners(newPath, value);
 
         // Only notify parent for Map changes
         if (target instanceof Map) {
-          notifyListeners(path, target);
+          this.notifyListeners(path, target);
         }
 
         return true;
@@ -369,23 +374,119 @@ class Store {
 
         if (exists && deleted) {
           const newPath = path ? `${path}.${prop}` : prop;
-          notifyListeners(newPath, undefined);
+          this.notifyListeners(newPath, undefined);
         }
 
         return deleted;
       }
-    });
+    };
+  }
 
-    const createProxy = (obj, path = '') => {
-      // Handle primitive values
-      if (typeof obj !== 'object' || obj === null) {
-        return obj;
+  /**
+   * Handles array method interception for reactive updates
+   * @param {Array} target - Target array
+   * @param {string} prop - Method name
+   * @param {string} path - Current path
+   * @returns {Function} Wrapped array method
+   * @private
+   */
+  handleArrayMethods(target, prop, path) {
+    return (...args) => {
+      const result = Array.prototype[prop].apply(target, args);
+      if (['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(prop)) {
+        this.notifyListeners(path, target);
       }
+      return result;
+    };
+  }
 
-      return new Proxy(obj, createProxyHandler(path));
+  /**
+   * Handles array index assignments and length changes
+   * @param {Array} target - Target array
+   * @param {string|number} prop - Array index or 'length'
+   * @param {any} value - Value to set
+   * @param {string} path - Current path
+   * @returns {boolean} Success status
+   * @private
+   */
+  handleArraySet(target, prop, value, path) {
+    if (prop === 'length') {
+      target.length = value;
+      this.notifyListeners(path, target);
+      return true;
+    }
+
+    const index = parseInt(prop, 10);
+    if (isNaN(index) || index < 0 || index > target.length-1) {
+      throw new Error(`[miu] Invalid array index: ${prop}`);
+    }
+
+    target[prop] = value;
+    const newPath = `${path}[${prop}]`;
+
+    // Notify both the specific element and the array itself
+    this.notifyListeners(newPath, value);
+    this.notifyListeners(path, target);
+
+    return true;
+  }
+
+  /**
+   * Handles Map operations for reactive updates
+   * @param {Map} target - Target Map
+   * @param {string} prop - Method or key name
+   * @param {string} path - Current path
+   * @returns {Function|any} Map method or value
+   * @private
+   */
+  handleMap(target, prop, path) {
+    const mapOperations = {
+      get: (key) => {
+        const value = target.get(key);
+        return typeof value === 'object' && value !== null
+          ? this.createProxy(value, `${path}[${key}]`)
+          : value;
+      },
+
+      set: (key, value) => {
+        target.set(key, value);
+        this.notifyListeners(`${path}[${key}]`, value);
+        this.notifyListeners(path, target);
+        return target;
+      },
+
+      delete: (key) => {
+        const hadKey = target.has(key);
+        const result = target.delete(key);
+        if (hadKey) {
+          this.notifyListeners(`${path}[${key}]`, undefined);
+          this.notifyListeners(path, target);
+        }
+        return result;
+      },
+
+      clear: () => {
+        const keys = Array.from(target.keys());
+        target.clear();
+        // Notify listeners on all Map keys
+        keys.forEach(key => this.notifyListeners(`${path}[${key}]`, undefined));
+        // Notify listeners on the Map itself
+        this.notifyListeners(path, target);
+        return undefined;
+      }
     };
 
-    return createProxy(initialState);
+    if (prop in mapOperations) {
+      return mapOperations[prop];
+    }
+
+    // For other built-in methods, bind them to the Map
+    if (typeof target[prop] === 'function') {
+      return target[prop].bind(target);
+    }
+
+    // Direct property access on Map becomes Map.get()
+    return target.get(prop);
   }
 }
 
