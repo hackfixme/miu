@@ -455,7 +455,7 @@ class ProxyManager {
     }
 
     const index = parseInt(prop, 10);
-    if (isNaN(index) || index < 0 || index > target.length-1) {
+    if (isNaN(index) || index < 0) {
       throw new Error(`[miu] Invalid array index: ${prop}`);
     }
 

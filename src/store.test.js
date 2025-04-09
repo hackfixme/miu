@@ -220,7 +220,6 @@ describe('Store', () => {
 
       test('throws error for invalid array indices', () => {
         expect(() => store.$set('items[-1]', 'x')).toThrow('Invalid array index: -1');
-        expect(() => store.$set('items[999]', 'x')).toThrow('Invalid array index: 999');
       });
 
       test('throws error when setting Map.size', () => {
@@ -692,7 +691,6 @@ describe('Store', () => {
     test('throws error on invalid array index access', () => {
       const store = createTestStore();
       expect(() => { store.items[-1] = 'x'; }).toThrow('Invalid array index');
-      expect(() => { store.items[999] = 'x'; }).toThrow('Invalid array index');
     });
   });
 });
@@ -803,6 +801,16 @@ describe('ProxyManager', () => {
       expect(isProxied(proxy[1])).toBe(true);
       expect(arr[1].value).toBe(43);
       expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr[1]', proxy[1]);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('supports setting elements at indices greater than length', () => {
+      const arr = [1, 2, 3];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+
+      proxy[5] = 6;
+
+      expect(proxy).toEqual([1, 2, 3, undefined, undefined, 6]);
       expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
     });
 
