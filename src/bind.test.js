@@ -1,9 +1,6 @@
 import { expect, describe, test, vi } from 'vitest';
 import { bind } from './bind.js';
 import { Store } from './store.js';
-// TODO: Remove deepCopy once $data is implemented for all paths, and
-// Array.length and Map.size are properly proxied.
-import { deepCopy } from './util.js';
 
 describe('bind element', () => {
   test('text elements bind to store value - one-way', () => {
@@ -917,7 +914,7 @@ describe('for', () => {
 
     // Store updates UI
     store.items.set('key3', { text: 'third' });
-    expect(deepCopy(store.items).size).toBe(3);
+    expect(store.items.size).toBe(3);
     items = document.querySelectorAll('li > div');
     expect(items.length).toBe(3);
     expect(items[0].textContent).toBe('key1:first');
@@ -926,7 +923,7 @@ describe('for', () => {
 
     // UI event updates store and UI
     document.querySelector('li:nth-of-type(2) button').click();
-    expect(deepCopy(store.items).size).toBe(2);
+    expect(store.items.size).toBe(2);
     items = document.querySelectorAll('li > div');
     expect(items.length).toBe(2);
     expect(items[0].textContent).toBe('key1:first');
