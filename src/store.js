@@ -429,6 +429,7 @@ class ProxyManager {
       if (['push', 'unshift', 'splice', 'fill', 'concat'].includes(prop)) {
         args = args.map(arg => this.createProxy(arg, path));
       }
+      // TODO: Notify for any removed array elements.
       const result = Array.prototype[prop].apply(target, args);
       if (['push', 'pop', 'shift', 'unshift', 'splice', 'fill', 'sort', 'reverse',
            'concat', 'copyWithin'].includes(prop)) {
@@ -449,7 +450,12 @@ class ProxyManager {
    */
   handleArraySet(target, prop, value, path) {
     if (prop === 'length') {
+      const prevLength = target.length;
       target.length = value;
+      // Notify any subscribers to elements that were removed.
+      for (let i = value; i < prevLength; i++) {
+        this.notifyListeners(`${path}[${i}]`, undefined);
+      }
       this.notifyListeners(path, target);
       return true;
     }

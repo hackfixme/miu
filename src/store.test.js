@@ -402,6 +402,26 @@ describe('Store', () => {
         ]);
       });
 
+      test('notifies on array length changes', () => {
+        const changes = [];
+        store.$subscribe('items', value => changes.push([...value]));
+        store.$subscribe('items[2]', value => changes.push(value));
+        store.$subscribe('items[3]', value => changes.push(value));
+
+        store.items.length = 1;
+        expect(changes).toEqual([
+          undefined,
+          ['a'],
+        ]);
+
+        changes.length = 0;
+
+        store.items.length = 3;
+        expect(changes).toEqual([
+          ['a', undefined, undefined],
+        ]);
+      });
+
       test('supports empty array operations correctly', () => {
         const store = new Store('testStore', { emptyArr: [] });
         const changes = [];
@@ -812,6 +832,26 @@ describe('ProxyManager', () => {
 
       expect(proxy).toEqual([1, 2, 3, undefined, undefined, 6]);
       expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+    });
+
+    test('allows modifying array length', () => {
+      const nested = { value: 42 };
+      const arr = [1, 2, nested];
+      const proxy = proxyManager.createProxy(arr, 'arr');
+
+      proxy.length = 5;
+      expect(proxy).toEqual([1, 2, { value: 42 }, undefined, undefined]);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledTimes(1);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+
+      proxyManager.notifyListeners.mockClear();
+      proxy.length = 2;
+      expect(proxy).toEqual([1, 2]);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledTimes(4);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr', proxy);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr[2]', undefined);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr[3]', undefined);
+      expect(proxyManager.notifyListeners).toHaveBeenCalledWith('arr[4]', undefined);
     });
 
     test('array push/pop operations', () => {
