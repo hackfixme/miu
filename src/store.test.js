@@ -112,10 +112,12 @@ describe('Store', () => {
       });
 
       test('preserves data structure but removes functions', () => {
+        const date = new Date();
         const initialState = {
           nested: {
             foo: 'bar',
-            fn: () => false
+            fn: () => false,
+            date: date
           },
           array: [1, 2, () => true, undefined, null],
           topFn: function() { return false }
@@ -128,7 +130,8 @@ describe('Store', () => {
         // to preserve array length and indices.
         expect(data).toEqual({
           nested: {
-            foo: 'bar'
+            foo: 'bar',
+            date: date
           },
           array: [1, 2, undefined, undefined, null]
         });
@@ -1068,5 +1071,17 @@ describe('ProxyManager', () => {
     expect(proxyManager.createProxy(bool)).toBe(true);
     expect(proxyManager.createProxy(nil)).toBe(null);
     expect(proxyManager.createProxy(undef)).toBe(undefined);
+  });
+
+  test('proxy handles Date objects', () => {
+    const date = new Date(1744361691629); // 2025-04-11T08:54:51.629Z
+    const proxy = proxyManager.createProxy(date);
+
+    // Proxy dates can still be used as non-proxied dates.
+    expect(proxy.getMonth()).toBe(3);
+    // But they can't be directly compared, so we can either compare their values...
+    expect(proxy.valueOf()).toEqual(date.valueOf());
+    // ... or compare the raw clone against the original Date object.
+    expect(proxy.$data).toEqual(date);
   });
 });

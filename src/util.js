@@ -5,6 +5,10 @@ function deepCopy(obj) {
     return typeof obj === 'function' ? undefined : obj;
   }
 
+  if (obj instanceof Date) {
+    return new Date(obj.valueOf());
+  }
+
   if (Array.isArray(obj)) {
     return obj.map(item => deepCopy(item));
   }

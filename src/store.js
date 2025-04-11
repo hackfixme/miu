@@ -375,7 +375,13 @@ class ProxyManager {
           return this.handleArrayMethods(target, prop, path);
         }
 
-        return target[prop];
+        const value = target[prop];
+
+        if (typeof value === 'function') {
+          return value.bind(target);
+        }
+
+        return value;
       },
 
       set: (target, prop, value) => {
