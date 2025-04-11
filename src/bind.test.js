@@ -732,19 +732,25 @@ describe('for', () => {
     expect(items.length).toBe(0);
   });
 
-  test('renders array elements and handles element removal', () => {
+  test('renders array elements and handles array updates', () => {
     const storeName = `test-${randomString()}`;
     const store = new Store(storeName, {
+      itemName: '',
       items: [
         { text: 'item1' },
         { text: 'item2' },
       ],
+      addItem() {
+        this.items.push({ name: this.itemName });
+        this.itemName = '';
+      },
       removeItem(event, context) {
         this.items.splice(context.index, 1);
       }
     });
 
     document.body.innerHTML = `
+      <input data-miu-bind="${storeName}.itemName<->value@input">
       <ul data-miu-for="${storeName}.items">
         <template>
           <li>
@@ -777,6 +783,15 @@ describe('for', () => {
     expect(items.length).toBe(2);
     expect(items[0].querySelector('span').textContent).toBe('item1');
     expect(items[1].querySelector('span').textContent).toBe('item3');
+
+    // A store method call should update both the store and the UI.
+    const input = document.querySelector('input');
+    input.value = 'newItem';
+    store.addItem();
+    expect(store.items.length).toBe(3);
+    items = document.querySelectorAll('li');
+    expect(items.length).toBe(3);
+    expect(input.value).toBe('');
   });
 
   test('supports array reordering correctly', () => {

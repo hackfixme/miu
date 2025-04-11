@@ -733,6 +733,53 @@ describe('ProxyManager', () => {
     expect(proxy1).toBe(proxy2);
   });
 
+  test('proxy handles primitive values', () => {
+    const num = 42;
+    const str = 'test';
+    const bool = true;
+    const nil = null;
+    const undef = undefined;
+
+    // Primitives should be returned as-is
+    expect(proxyManager.createProxy(num)).toBe(42);
+    expect(proxyManager.createProxy(str)).toBe('test');
+    expect(proxyManager.createProxy(bool)).toBe(true);
+    expect(proxyManager.createProxy(nil)).toBe(null);
+    expect(proxyManager.createProxy(undef)).toBe(undefined);
+  });
+
+  test('proxy handles Date objects', () => {
+    const date = new Date(1744361691629); // 2025-04-11T08:54:51.629Z
+    const proxy = proxyManager.createProxy(date);
+
+    // Proxy dates can still be used as non-proxied dates.
+    expect(proxy.getMonth()).toBe(3);
+    // But they can't be directly compared, so we can either compare their values...
+    expect(proxy.valueOf()).toEqual(date.valueOf());
+    // ... or compare the raw clone against the original Date object.
+    expect(proxy.$data).toEqual(date);
+  });
+
+  test('binds methods correctly based on their source', () => {
+    const obj = {
+      value: 42,
+      increment() {
+        this.value += 1;
+      },
+      created: new Date(1744361691629) // 2025-04-11T08:54:51.629Z
+    };
+    const proxy = proxyManager.createProxy(obj);
+
+    // Custom method should work with proxy binding
+    proxy.increment();
+    expect(proxy.value).toBe(43);
+    expect(proxyManager.notifyListeners).toHaveBeenCalledWith('value', 43);
+
+    // Built-in Date methods should work correctly
+    expect(proxy.created.getMonth()).toBe(3);
+    expect(() => proxy.created.getMonth()).not.toThrow();
+  });
+
   describe('Object handling', () => {
     test('notifies listeners correctly for object operations', () => {
       const obj = { name: 'test' };
@@ -1104,32 +1151,5 @@ describe('ProxyManager', () => {
       expect(proxyManager.notifyListeners).toHaveBeenCalledWith('[key2]', { x: 2 });
       expect(proxyManager.notifyListeners).toHaveBeenCalledWith('', map);
     });
-  });
-
-  test('proxy handles primitive values', () => {
-    const num = 42;
-    const str = 'test';
-    const bool = true;
-    const nil = null;
-    const undef = undefined;
-
-    // Primitives should be returned as-is
-    expect(proxyManager.createProxy(num)).toBe(42);
-    expect(proxyManager.createProxy(str)).toBe('test');
-    expect(proxyManager.createProxy(bool)).toBe(true);
-    expect(proxyManager.createProxy(nil)).toBe(null);
-    expect(proxyManager.createProxy(undef)).toBe(undefined);
-  });
-
-  test('proxy handles Date objects', () => {
-    const date = new Date(1744361691629); // 2025-04-11T08:54:51.629Z
-    const proxy = proxyManager.createProxy(date);
-
-    // Proxy dates can still be used as non-proxied dates.
-    expect(proxy.getMonth()).toBe(3);
-    // But they can't be directly compared, so we can either compare their values...
-    expect(proxy.valueOf()).toEqual(date.valueOf());
-    // ... or compare the raw clone against the original Date object.
-    expect(proxy.$data).toEqual(date);
   });
 });

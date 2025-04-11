@@ -362,7 +362,7 @@ class ProxyManager {
    */
   createHandler(path) {
     return {
-      get: (target, prop) => {
+      get: (target, prop, receiver) => {
         if (prop === '$data') {
           return deepCopy(target);
         }
@@ -378,7 +378,13 @@ class ProxyManager {
         const value = target[prop];
 
         if (typeof value === 'function') {
-          return value.bind(target);
+          // For methods defined directly on the object (like store methods),
+          // bind to the proxy to maintain reactivity. For inherited methods
+          // (like built-in Date/Array methods), bind to the target to preserve
+          // proper 'this' context and internal slots access.
+          return Object.prototype.hasOwnProperty.call(target, prop)
+            ? value.bind(receiver)
+            : value.bind(target);
         }
 
         return value;
