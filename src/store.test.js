@@ -72,6 +72,64 @@ describe('Store', () => {
       expect(store.nullValue).toBe(null);
       expect(store.falseBool).toBe(false);
     });
+
+    test('supports cloning a store', () => {
+      const original = new Store('original', {
+        value: 'initial'
+      });
+
+      const clone1 = new Store('clone1', original);
+      // The clone store can access the state on the original store
+      expect(clone1.value).toBe('initial');
+      // It can also update it, which is reflected on the original.
+      clone1.value = 'update1 from clone1'
+      expect(original.value).toBe('update1 from clone1');
+
+      // Original store subscriptions work as usual
+      const changes = [];
+      original.$subscribe('value', v => changes.push(`original sub got: ${v}`));
+      original.value = 'update1 from original';
+      expect(changes).toEqual(['original sub got: update1 from original']);
+      // And the changes are reflected on the clone.
+      expect(clone1.value).toBe('update1 from original');
+
+      // Subscriptions on the clone work as usual, and subscriptions on the
+      // original store will also be notified of state changes on the clone.
+      changes.length = 0;
+      clone1.$subscribe('value', v => changes.push(`clone1 sub got: ${v}`));
+      clone1.value = 'update2 from clone1';
+      expect(changes).toEqual([
+        'original sub got: update2 from clone1',
+        'clone1 sub got: update2 from clone1',
+      ]);
+
+      // ... and viceversa.
+      changes.length = 0;
+      original.value = 'update3 from original';
+      expect(changes).toEqual([
+        'original sub got: update3 from original',
+        'clone1 sub got: update3 from original',
+      ]);
+
+      // Cloning a clone is a also possible.
+      changes.length = 0;
+      const clone2 = new Store('clone2', clone1);
+      clone2.$subscribe('value', v => changes.push(`clone2 sub got: ${v}`));
+      clone2.value = 'update4 from clone2';
+      expect(changes).toEqual([
+        'original sub got: update4 from clone2',
+        'clone1 sub got: update4 from clone2',
+        'clone2 sub got: update4 from clone2',
+      ]);
+
+      // Changes on a clone can also be private to it.
+      changes.length = 0;
+      clone2.$subscribe('otherValue', v => changes.push(`clone2 otherValue sub got: ${v}`));
+      clone2.otherValue = 'otherValue update from clone2';
+      expect(changes).toEqual([
+        'clone2 otherValue sub got: otherValue update from clone2',
+      ]);
+    });
   });
 
   describe('api', () => {

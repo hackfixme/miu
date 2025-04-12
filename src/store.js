@@ -35,11 +35,16 @@ import { deepCopy } from './util.js';
  * store.$data; // { user: { name: 'Jane'} }
  */
 class Store {
+  // A map of Store instances to SubscriptionManager instances. Used for
+  // subscription sharing between parent and child Stores.
+  static #subManagers = new WeakMap();
+
   /**
    * Creates a new Store instance
    * @constructor
    * @param {string} name - Unique identifier for the store
-   * @param {Object} [initialState={}] - Initial state object
+   * @param {Object|Store} [initialState={}] - Initial state object.
+       If it's an existing Store, its state and subscriptions will be shared.
    * @throws {Error} If name is not a string
    * @returns {Proxy} Proxied store instance with reactive capabilities
    */
@@ -49,33 +54,48 @@ class Store {
     }
 
     const pathOps = PathOperations.create();
-    const subMgr = new SubscriptionManager(initialState, pathOps);
+
+    let state, subMgr;
+    if (initialState instanceof Store) {
+      state = initialState.$state;
+      subMgr = Store.#subManagers.get(initialState);
+    } else {
+      state = initialState;
+      subMgr = new SubscriptionManager(state, pathOps);
+    }
+
     const proxyMgr = new ProxyManager(
       (path, value) => subMgr.notify(path, value),
     );
-
-    const state = proxyMgr.createProxy(initialState);
+    const stateProxy = proxyMgr.createProxy(state);
     const api = this._createAPI(
-      name, state,
+      name,
+      stateProxy,
       (path, callback) => subMgr.subscribe(path, callback),
       pathOps,
     );
 
-    return new Proxy(api, {
+    const apiProxy = new Proxy(api, {
       get: (target, prop) => {
         if (prop.toString().startsWith('$')) {
           return target[prop];
         }
-        return state[prop];
+        return stateProxy[prop];
       },
       set: (_, prop, value) => {
         if (prop.toString().startsWith('$')) {
           throw new Error(`[miu] '${prop}' is read-only`);
         }
-        state[prop] = value;
+        stateProxy[prop] = value;
         return true;
-      }
+      },
+      // Ensures instanceof Store is true
+      getPrototypeOf: () => Store.prototype
     });
+
+    Store.#subManagers.set(apiProxy, subMgr);
+
+    return apiProxy;
   }
 
   /**
@@ -102,6 +122,7 @@ class Store {
         return subscribe(path, callback);
       },
       get $data() { return deepCopy(state); },
+      get $state() { return state; },
       get $name() { return name; }
     };
   }
