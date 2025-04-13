@@ -54,20 +54,20 @@ class Store {
     }
 
     const pathOps = PathOperations.create();
-
-    let state, subMgr;
-    if (initialState instanceof Store) {
-      state = initialState.$state;
-      subMgr = Store.#subManagers.get(initialState);
-    } else {
-      state = initialState;
-      subMgr = new SubscriptionManager(state, pathOps);
-    }
-
-    const proxyMgr = new ProxyManager(
+    const state = initialState instanceof Store ? initialState.$state : initialState;
+    const subMgr = Store.#subManagers.get(initialState) ?? new SubscriptionManager(pathOps);
+    const stateProxy = StateProxy.create(
+      state,
       (path, value) => subMgr.notify(path, value),
     );
-    const stateProxy = proxyMgr.createProxy(state);
+
+    // TODO: There's a circular dependency between StateProxy and SubscriptionManager
+    // that I would like to fix, but attempts of doing so have been frustratingly
+    // tricky. I've tried everything from keeping track of the root state in
+    // StateProxy instances to a small event bus system, but they all introduced
+    // too many complications and edge cases. So I'll leave it as is for now.
+    subMgr.rootState = stateProxy;
+
     const api = this._createAPI(
       name,
       stateProxy,
@@ -215,13 +215,12 @@ class PathOperations {
  */
 class SubscriptionManager {
   /**
-   * @param {Object} rootState - Root state object
    * @param {Object} pathOps - Path operation utilities
    */
-  constructor(rootState, pathOps) {
+  constructor(pathOps) {
     this.pathOps = pathOps;
-    this.rootState = rootState;
     this.listeners = new Map();
+    this.rootState = null; // will be set externally
   }
 
   /**
@@ -309,137 +308,163 @@ class SubscriptionManager {
   }
 }
 
-const IS_PROXY = Symbol('isProxy');
-
 /**
- * Check if an object is proxied
- * @param {Object} obj - Object to check
- * @returns {boolean} True if object is proxied
+ * A reactive proxy for state management with support for nested objects, arrays, and Maps.
  */
-function isProxied(obj) {
-  if (obj !== null && typeof obj === 'object') {
-    return !!obj[IS_PROXY];
-  }
-  return false;
-}
-
-/**
- * Creates and manages proxy objects for reactive state
- * @class
- */
-class ProxyManager {
-  /**
-   * @param {function(string, any): void} notifyListeners - Callback for state changes
-   */
-  constructor(notifyListeners) {
-    this.notifyListeners = notifyListeners;
-  }
+class StateProxy {
+  // Mapping of Proxy instances to StateProxy instances.
+  static #instances = new WeakMap();
+  // Symbol to identify StateProxy instances.
+  static #isProxy = Symbol('isProxy')
 
   /**
-   * Creates a proxy for an object with reactive capabilities
-   * @param {Object} obj - Object to make reactive
-   * @param {string} [path=''] - Current path in object tree
-   * @returns {Proxy|any} Proxied object or original value if not an object
+   * Creates a new StateProxy instance.
+   * @param {Object|Array|Map} target - The object to make reactive.
+   * @param {function(string, any): void} notify - Function to notify subscribers of state changes
+   * @param {string} [path=''] - Dot notation path in the state to the current object
+   * @returns {Proxy} A proxy wrapper around the target object
    */
-  createProxy(obj, path = '') {
-    // Don't proxy primitives or already-proxied objects
-    if (obj === null || typeof obj !== 'object' || obj[IS_PROXY]) {
-      return obj;
-    }
-
-    // Recursively create proxies for all nested values
-    if (obj instanceof Map) {
-      for (const [key, value] of obj.entries()) {
-        obj.set(key, this.createProxy(value, `${path}[${key}]`));
-      }
-    } else if (Array.isArray(obj)) {
-      for (let i = 0; i < obj.length; i++) {
-        obj[i] = this.createProxy(obj[i], `${path}[${i}]`);
-      }
-    } else {
-      for (const [key, value] of Object.entries(obj)) {
-        obj[key] = this.createProxy(value, path ? `${path}.${key}` : key);
-      }
-    }
-
-    const proxy = new Proxy(obj, this.createHandler(path));
-
-    // Mark this proxy to prevent double-wrapping
-    Object.defineProperty(proxy, IS_PROXY, {
+  constructor(target, notify, path = '') {
+    this.notify = notify;
+    this.target = target;
+    this.path = path;
+    const proxy = new Proxy(target, this);
+    StateProxy.#instances.set(proxy, this);
+    Object.defineProperty(proxy, StateProxy.#isProxy, {
       value: true,
       configurable: false,
       enumerable: false,
       writable: false
     });
-
     return proxy;
   }
 
   /**
-   * Creates a proxy handler for reactive objects
-   * @param {string} path - Current path in object tree
-   * @returns {ProxyHandler} Proxy handler object
-   * @private
+   * Creates a state proxy that recursively wraps a deep copy of an object and
+   * its nested properties. The original object remains unchanged.
+   * @param {*} obj - The target object to proxy
+   * @param {function} notify - Function to notify subscribers of state changes
+   * @param {string} [path=''] - Dot notation path in the state to the current object
+   * @returns {*} A proxy wrapping a copy of the target object or the original value if not proxyable
    */
-  createHandler(path) {
-    return {
-      get: (target, prop, receiver) => {
-        if (prop === '$data') {
-          return deepCopy(target);
-        }
+  static create(obj, notify, path = '') {
+    if (obj === null || typeof obj !== 'object' ||
+        StateProxy.#instances.get(obj)?.path === path) {
+      return obj;
+    }
 
-        if (target instanceof Map) {
-          return this.handleMap(target, prop, path);
-        }
-
-        if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
-          return this.handleArrayMethods(target, prop, path);
-        }
-
-        const value = target[prop];
-
-        if (typeof value === 'function') {
-          // For methods defined directly on the object (like store methods),
-          // bind to the proxy to maintain reactivity. For inherited methods
-          // (like built-in Date/Array methods), bind to the target to preserve
-          // proper 'this' context and internal slots access.
-          return Object.prototype.hasOwnProperty.call(target, prop)
-            ? value.bind(receiver)
-            : value.bind(target);
-        }
-
-        return value;
-      },
-
-      set: (target, prop, value) => {
-        if (Array.isArray(target)) {
-          return this.handleArraySet(target, prop, value, path);
-        }
-
-        const newPath = path ? `${path}.${prop}` : prop;
-        target[prop] = this.createProxy(value, newPath);
-        this.notifyListeners(newPath, target[prop]);
-
-        // Only notify parent for Map changes
-        if (target instanceof Map) {
-          this.notifyListeners(path, target);
-        }
-
-        return true;
-      },
-
-      deleteProperty: (target, prop) => {
-        const exists = prop in target;
-        const deleted = delete target[prop];
-
-        if (exists && deleted) {
-          const newPath = path ? `${path}.${prop}` : prop;
-          this.notifyListeners(newPath, undefined);
-        }
-
-        return deleted;
+    let target;
+    // Recursively create proxies for all nested values
+    if (obj instanceof Map) {
+      target = new Map();
+      for (const [key, value] of obj.entries()) {
+        target.set(key, StateProxy.create(value, notify, `${path}[${key}]`));
       }
-    };
+    } else if (Array.isArray(obj)) {
+      target = [];
+      for (let i = 0; i < obj.length; i++) {
+        target[i] = StateProxy.create(obj[i], notify, `${path}[${i}]`);
+      }
+    } else if (obj instanceof Date) {
+      target = new Date(obj.valueOf());
+    } else if (obj instanceof StateProxy) {
+      target = StateProxy.#instances.get(obj).target;
+    } else {
+      target = {};
+      for (const [key, value] of Object.entries(obj)) {
+        target[key] = StateProxy.create(value, notify, path ? `${path}.${key}` : key);
+      }
+    }
+
+    return new StateProxy(target, notify, path);
+  }
+
+  /**
+   * Intercepts property access on the proxy.
+   * @param {Object|Array|Map} target - The target object
+   * @param {string|symbol} prop - The property being accessed
+   * @param {Proxy} receiver - The proxy or object derived from it
+   * @returns {any} The property value
+   */
+  get(target, prop, receiver) {
+    if (prop === '$data') {
+      return deepCopy(target);
+    }
+
+    if (target instanceof Map) {
+      return this.handleMap(target, prop, this.path);
+    }
+
+    if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
+      return this.handleArrayMethods(target, prop, this.path);
+    }
+
+    const value = target[prop];
+
+    if (typeof value === 'function') {
+      // For methods defined directly on the object (like store methods),
+      // bind to the proxy to maintain reactivity. For inherited methods
+      // (like built-in Date/Array methods), bind to the target to preserve
+      // proper 'this' context and internal slots access.
+      return Object.prototype.hasOwnProperty.call(target, prop)
+        ? value.bind(receiver)
+        : value.bind(target);
+    }
+
+    return value;
+  }
+
+  /**
+   * Intercepts property assignment on the proxy.
+   * @param {Object|Array|Map} target - The target object
+   * @param {string|symbol} prop - The property being set
+   * @param {any} value - The value being assigned
+   * @returns {boolean} Whether the assignment was successful
+   */
+  set(target, prop, value) {
+    if (Array.isArray(target)) {
+      return this.handleArraySet(target, prop, value);
+    }
+
+    const newPath = this.path ? `${this.path}.${prop}` : prop;
+    target[prop] = StateProxy.create(value, this.notify, newPath);
+    this.notify(newPath, target[prop]);
+
+    // Only notify parent for Map changes
+    if (target instanceof Map) {
+      this.notify(this.path, target);
+    }
+
+    return true;
+  }
+
+  /**
+   * Intercepts property deletion on the proxy.
+   * @param {Object|Array|Map} target - The target object
+   * @param {string|symbol} prop - The property being deleted
+   * @returns {boolean} Whether the deletion was successful
+   */
+  deleteProperty(target, prop) {
+    const exists = prop in target;
+    const deleted = delete target[prop];
+
+    if (exists && deleted) {
+      const newPath = this.path ? `${this.path}.${prop}` : prop;
+      this.notify(newPath, undefined);
+    }
+
+    return deleted;
+  }
+
+  /**
+   * Custom instanceof behavior for proxied objects.
+   * Determines whether an object is an instance of this proxy wrapper.
+   * Note that instanceof on the original non-proxied object will continue to work.
+   * @param {any} instance - The object to test
+   * @returns {boolean} True if the object is a proxy created by this wrapper
+   */
+  static [Symbol.hasInstance](instance) {
+    return !!instance && instance[StateProxy.#isProxy];
   }
 
   /**
@@ -451,16 +476,17 @@ class ProxyManager {
    * @private
    */
   handleArrayMethods(target, prop, path) {
+    const self = this;
     return (...args) => {
       // Arguments to methods that can add new values to the array must be proxied first.
       if (['push', 'unshift', 'splice', 'fill', 'concat'].includes(prop)) {
-        args = args.map(arg => this.createProxy(arg, path));
+        args = args.map(arg => StateProxy.create(arg, self.notify, path));
       }
       // TODO: Notify for any removed array elements.
       const result = Array.prototype[prop].apply(target, args);
       if (['push', 'pop', 'shift', 'unshift', 'splice', 'fill', 'sort', 'reverse',
            'concat', 'copyWithin'].includes(prop)) {
-        this.notifyListeners(path, target);
+        self.notify(path, target);
       }
       return result;
     };
@@ -475,15 +501,15 @@ class ProxyManager {
    * @returns {boolean} Success status
    * @private
    */
-  handleArraySet(target, prop, value, path) {
+  handleArraySet(target, prop, value) {
     if (prop === 'length') {
       const prevLength = target.length;
       target.length = value;
       // Notify any subscribers to elements that were removed.
       for (let i = value; i < prevLength; i++) {
-        this.notifyListeners(`${path}[${i}]`, undefined);
+        this.notify(`${this.path}[${i}]`, undefined);
       }
-      this.notifyListeners(path, target);
+      this.notify(this.path, target);
       return true;
     }
 
@@ -492,12 +518,12 @@ class ProxyManager {
       throw new Error(`[miu] Invalid array index: ${prop}`);
     }
 
-    const newPath = `${path}[${prop}]`;
-    target[prop] = this.createProxy(value, newPath);
+    const newPath = `${this.path}[${prop}]`;
+    target[prop] = StateProxy.create(value, this.notify, newPath);
 
     // Notify both the specific element and the array itself
-    this.notifyListeners(newPath, target[prop]);
-    this.notifyListeners(path, target);
+    this.notify(newPath, target[prop]);
+    this.notify(this.path, target);
 
     return true;
   }
@@ -515,9 +541,9 @@ class ProxyManager {
       get: (key) => target.get(key),
 
       set: (key, value) => {
-        target.set(key, this.createProxy(value, `${path}[${key}]`));
-        this.notifyListeners(`${path}[${key}]`, target.get(key));
-        this.notifyListeners(path, target);
+        target.set(key, StateProxy.create(value, this.notify, `${path}[${key}]`));
+        this.notify(`${path}[${key}]`, target.get(key));
+        this.notify(path, target);
         return target;
       },
 
@@ -525,8 +551,8 @@ class ProxyManager {
         const hadKey = target.has(key);
         const result = target.delete(key);
         if (hadKey) {
-          this.notifyListeners(`${path}[${key}]`, undefined);
-          this.notifyListeners(path, target);
+          this.notify(`${path}[${key}]`, undefined);
+          this.notify(path, target);
         }
         return result;
       },
@@ -535,9 +561,9 @@ class ProxyManager {
         const keys = Array.from(target.keys());
         target.clear();
         // Notify listeners on all Map keys
-        keys.forEach(key => this.notifyListeners(`${path}[${key}]`, undefined));
+        keys.forEach(key => this.notify(`${path}[${key}]`, undefined));
         // Notify listeners on the Map itself
-        this.notifyListeners(path, target);
+        this.notify(path, target);
         return undefined;
       }
     };
@@ -571,7 +597,6 @@ if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
   internals = {
     PathOperations,
     SubscriptionManager,
-    ProxyManager,
-    isProxied
+    StateProxy,
   };
 }
