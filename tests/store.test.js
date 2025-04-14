@@ -840,7 +840,7 @@ describe('StateProxy', () => {
     // Custom method should work with proxy binding
     proxy.increment();
     expect(proxy.value).toBe(43);
-    expect(notify).toHaveBeenCalledWith('value', 43);
+    expect(notify).toHaveBeenCalledWith('value', 43, proxy);
     // The original object should remain unchanged
     expect(obj.value).toBe(42);
   });
@@ -868,15 +868,15 @@ describe('StateProxy', () => {
 
       // Set new property
       proxy.age = 25;
-      expect(notify).toHaveBeenCalledWith('age', 25);
+      expect(notify).toHaveBeenCalledWith('age', 25, proxy);
 
       // Modify existing
       proxy.name = 'changed';
-      expect(notify).toHaveBeenCalledWith('name', 'changed');
+      expect(notify).toHaveBeenCalledWith('name', 'changed', proxy);
 
       // Delete property
       delete proxy.name;
-      expect(notify).toHaveBeenCalledWith('name', undefined);
+      expect(notify).toHaveBeenCalledWith('name', undefined, proxy);
     });
 
     test('handles nested object operations correctly', () => {
@@ -885,15 +885,15 @@ describe('StateProxy', () => {
       const proxy = createProxy(obj, notify);
 
       proxy.user.name = 'changed';
-      expect(notify).toHaveBeenCalledWith('user.name', 'changed');
+      expect(notify).toHaveBeenCalledWith('user.name', 'changed', proxy);
 
       // Add nested property
       proxy.user.age = 25;
-      expect(notify).toHaveBeenCalledWith('user.age', 25);
+      expect(notify).toHaveBeenCalledWith('user.age', 25, proxy);
 
       // Delete nested property
       delete proxy.user.name;
-      expect(notify).toHaveBeenCalledWith('user.name', undefined);
+      expect(notify).toHaveBeenCalledWith('user.name', undefined, proxy);
     });
 
     test('handles special property types correctly', () => {
@@ -903,16 +903,16 @@ describe('StateProxy', () => {
 
       // Setting same value should still notify
       proxy.name = 'test';
-      expect(notify).toHaveBeenCalledWith('name', 'test');
+      expect(notify).toHaveBeenCalledWith('name', 'test', proxy);
 
       // Setting undefined
       proxy.undefinedProp = undefined;
-      expect(notify).toHaveBeenCalledWith('undefinedProp', undefined);
+      expect(notify).toHaveBeenCalledWith('undefinedProp', undefined, proxy);
 
       // Symbol properties should notify like normal properties
       const symbol = Symbol('test');
       proxy[symbol] = 'symbol';
-      expect(notify).toHaveBeenCalledWith(symbol, 'symbol');
+      expect(notify).toHaveBeenCalledWith(symbol, 'symbol', proxy);
     });
   });
 
@@ -933,8 +933,8 @@ describe('StateProxy', () => {
       proxy[1] = { value: 43 };
       expect(isProxied(proxy[1])).toBe(true);
       expect(proxy[1].value).toBe(43);
-      expect(notify).toHaveBeenCalledWith('arr[1]', proxy[1]);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr[1]', proxy[1], proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('supports setting elements at indices greater than length', () => {
@@ -945,7 +945,7 @@ describe('StateProxy', () => {
       proxy[5] = 6;
 
       expect(proxy).toEqual([1, 2, 3, undefined, undefined, 6]);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('allows modifying array length', () => {
@@ -957,16 +957,16 @@ describe('StateProxy', () => {
       proxy.length = 5;
       expect(proxy).toEqual([1, 2, { value: 42 }, undefined, undefined]);
       expect(notify).toHaveBeenCalledTimes(1);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
 
       notify.mockClear();
       proxy.length = 2;
       expect(proxy).toEqual([1, 2]);
       expect(notify).toHaveBeenCalledTimes(4);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
-      expect(notify).toHaveBeenCalledWith('arr[2]', undefined);
-      expect(notify).toHaveBeenCalledWith('arr[3]', undefined);
-      expect(notify).toHaveBeenCalledWith('arr[4]', undefined);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
+      expect(notify).toHaveBeenCalledWith('arr[2]', undefined, proxy);
+      expect(notify).toHaveBeenCalledWith('arr[3]', undefined, proxy);
+      expect(notify).toHaveBeenCalledWith('arr[4]', undefined, proxy);
     });
 
     test('array push/pop operations', () => {
@@ -979,13 +979,13 @@ describe('StateProxy', () => {
       proxy.push({ y: 2 });
       expect(isProxied(proxy[1])).toBe(true);
       expect(proxy[0]).toBe(original);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
 
       // pop
       const popped = proxy.pop();
       expect(isProxied(popped)).toBe(true);
       expect(proxy[0]).toBe(original);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('array shift/unshift operations', () => {
@@ -1000,14 +1000,14 @@ describe('StateProxy', () => {
       expect(isProxied(proxy[0])).toBe(true);
       expect(proxy[1]).toBe(original1);
       expect(proxy[2]).toBe(original2);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
 
       // shift
       const shifted = proxy.shift();
       expect(isProxied(shifted)).toBe(true);
       expect(proxy[0]).toBe(original1);
       expect(proxy[1]).toBe(original2);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('array splice operations', () => {
@@ -1032,7 +1032,7 @@ describe('StateProxy', () => {
       // Check new elements are proxied
       expect(isProxied(proxy[1])).toBe(true);
       expect(isProxied(proxy[2])).toBe(true);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('array sort/reverse operations', () => {
@@ -1048,14 +1048,14 @@ describe('StateProxy', () => {
       expect(proxy[0]).toBe(original3);
       expect(proxy[1]).toBe(original2);
       expect(proxy[2]).toBe(original1);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
 
       // sort (by x value)
       proxy.sort((a, b) => a.x - b.x);
       expect(proxy[0]).toBe(original1);
       expect(proxy[1]).toBe(original2);
       expect(proxy[2]).toBe(original3);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('array fill operations', () => {
@@ -1068,7 +1068,7 @@ describe('StateProxy', () => {
       expect(isProxied(proxy[2])).toBe(true);
       expect(proxy[1].y).toBe(42);
       expect(proxy[2].y).toBe(42);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('array concat operations', () => {
@@ -1083,7 +1083,7 @@ describe('StateProxy', () => {
       expect(isProxied(result[1])).toBe(true);
       expect(result[0].x).toBe(1);
       expect(result[1].x).toBe(2);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
 
     test('array copyWithin operations', () => {
@@ -1098,7 +1098,7 @@ describe('StateProxy', () => {
       expect(proxy[3]).toEqual({ x: 2 });
       expect(proxy[0]).toBe(original1);
       expect(proxy[1]).toBe(original2);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
+      expect(notify).toHaveBeenCalledWith('arr', proxy, proxy);
     });
   });
 
@@ -1118,8 +1118,8 @@ describe('StateProxy', () => {
       proxy.set('key1', { value: 43 });
       expect(isProxied(proxy.get('key1'))).toBe(true);
       expect(proxy.get('key1').value).toBe(43);
-      expect(notify).toHaveBeenCalledWith('[key1]', { value: 43 });
-      expect(notify).toHaveBeenCalledWith('', new Map([['key1', { value: 43 }]]));
+      expect(notify).toHaveBeenCalledWith('[key1]', { value: 43 }, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map([['key1', { value: 43 }]]), proxy);
     });
 
     test('Map iterator methods preserve proxy state', () => {
@@ -1153,28 +1153,28 @@ describe('StateProxy', () => {
       const newValue = proxy.get('key1');
       expect(isProxied(newValue)).toBe(true);
       expect(newValue).not.toBe(original);
-      expect(notify).toHaveBeenCalledWith('[key1]', { x: 2 });
-      expect(notify).toHaveBeenCalledWith('', new Map([['key1', { x: 2 }]]));
+      expect(notify).toHaveBeenCalledWith('[key1]', { x: 2 }, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map([['key1', { x: 2 }]]), proxy);
 
       // delete and set
       proxy.delete('key1');
-      expect(notify).toHaveBeenCalledWith('[key1]', undefined);
-      expect(notify).toHaveBeenCalledWith('', new Map());
+      expect(notify).toHaveBeenCalledWith('[key1]', undefined, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map(), proxy);
 
       proxy.set('key1', { x: 3 });
       expect(isProxied(proxy.get('key1'))).toBe(true);
-      expect(notify).toHaveBeenCalledWith('[key1]', { x: 3 });
-      expect(notify).toHaveBeenCalledWith('', new Map([['key1', { x: 3 }]]));
+      expect(notify).toHaveBeenCalledWith('[key1]', { x: 3 }, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map([['key1', { x: 3 }]]), proxy);
 
       // clear and set
       proxy.clear();
-      expect(notify).toHaveBeenCalledWith('[key1]', undefined);
-      expect(notify).toHaveBeenCalledWith('', new Map());
+      expect(notify).toHaveBeenCalledWith('[key1]', undefined, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map(), proxy);
 
       proxy.set('key2', { x: 4 });
       expect(isProxied(proxy.get('key2'))).toBe(true);
-      expect(notify).toHaveBeenCalledWith('[key2]', { x: 4 });
-      expect(notify).toHaveBeenCalledWith('', new Map([['key2', { x: 4 }]]));
+      expect(notify).toHaveBeenCalledWith('[key2]', { x: 4 }, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map([['key2', { x: 4 }]]), proxy);
     });
 
     test('Map size and existence checks', () => {
@@ -1188,14 +1188,14 @@ describe('StateProxy', () => {
       proxy.delete('key1');
       expect(proxy.size).toBe(0);
       expect(proxy.has('key1')).toBe(false);
-      expect(notify).toHaveBeenCalledWith('[key1]', undefined);
-      expect(notify).toHaveBeenCalledWith('', new Map());
+      expect(notify).toHaveBeenCalledWith('[key1]', undefined, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map(), proxy);
 
       proxy.set('key2', { x: 2 });
       expect(proxy.size).toBe(1);
       expect(proxy.has('key2')).toBe(true);
-      expect(notify).toHaveBeenCalledWith('[key2]', { x: 2 });
-      expect(notify).toHaveBeenCalledWith('', new Map([['key2', { x: 2 }]]));
+      expect(notify).toHaveBeenCalledWith('[key2]', { x: 2 }, proxy);
+      expect(notify).toHaveBeenCalledWith('', new Map([['key2', { x: 2 }]]), proxy);
     });
 
     test('Map operations with nested paths', () => {
@@ -1204,12 +1204,12 @@ describe('StateProxy', () => {
       const proxy = createProxy(map, notify, 'nested');
 
       proxy.set('key1', { x: 1 });
-      expect(notify).toHaveBeenCalledWith('nested[key1]', { x: 1 });
-      expect(notify).toHaveBeenCalledWith('nested', new Map([['key1', { x: 1 }]]));
+      expect(notify).toHaveBeenCalledWith('nested[key1]', { x: 1 }, proxy);
+      expect(notify).toHaveBeenCalledWith('nested', new Map([['key1', { x: 1 }]]), proxy);
 
       proxy.delete('key1');
-      expect(notify).toHaveBeenCalledWith('nested[key1]', undefined);
-      expect(notify).toHaveBeenCalledWith('nested', new Map());
+      expect(notify).toHaveBeenCalledWith('nested[key1]', undefined, proxy);
+      expect(notify).toHaveBeenCalledWith('nested', new Map(), proxy);
     });
 
     test('Map operations require method calls for modifications', () => {
@@ -1228,11 +1228,11 @@ describe('StateProxy', () => {
       // Proper way to set
       proxy.set('key2', { x: 2 });
       expect(proxy.get('key2')).toEqual({ x: 2 });
-      expect(notify).toHaveBeenCalledWith('[key2]', { x: 2 });
+      expect(notify).toHaveBeenCalledWith('[key2]', { x: 2 }, proxy);
       expect(notify).toHaveBeenCalledWith('', new Map([
         ['key1', { x: 1 }],
         ['key2', { x: 2 }],
-      ]));
+      ]), proxy);
     });
   });
 });
