@@ -312,8 +312,6 @@ class SubscriptionManager {
  * A reactive proxy for state management with support for nested objects, arrays, and Maps.
  */
 class StateProxy {
-  // Mapping of Proxy instances to StateProxy instances.
-  static #instances = new WeakMap();
   // Symbol to identify StateProxy instances.
   static #isProxy = Symbol('isProxy')
 
@@ -324,18 +322,20 @@ class StateProxy {
    * @param {string} [path=''] - Dot notation path in the state to the current object
    * @returns {Proxy} A proxy wrapper around the target object
    */
-  constructor(target, notify, path = '') {
+  constructor(target, notify, path = '', root = null) {
     this.notify = notify;
     this.target = target;
     this.path = path;
+    this.root = root;
+
     const proxy = new Proxy(target, this);
-    StateProxy.#instances.set(proxy, this);
     Object.defineProperty(proxy, StateProxy.#isProxy, {
       value: true,
       configurable: false,
       enumerable: false,
       writable: false
     });
+
     return proxy;
   }
 
@@ -347,9 +347,9 @@ class StateProxy {
    * @param {string} [path=''] - Dot notation path in the state to the current object
    * @returns {*} A proxy wrapping a copy of the target object or the original value if not proxyable
    */
-  static create(obj, notify, path = '') {
+  static create(obj, notify, path = '', root = null) {
     if (obj === null || typeof obj !== 'object' ||
-        StateProxy.#instances.get(obj)?.path === path) {
+        (obj instanceof StateProxy && obj.$path === path)) {
       return obj;
     }
 
@@ -358,25 +358,25 @@ class StateProxy {
     if (obj instanceof Map) {
       target = new Map();
       for (const [key, value] of obj.entries()) {
-        target.set(key, StateProxy.create(value, notify, `${path}[${key}]`));
+        target.set(key, StateProxy.create(value, notify, `${path}[${key}]`, root ?? target));
       }
     } else if (Array.isArray(obj)) {
       target = [];
       for (let i = 0; i < obj.length; i++) {
-        target[i] = StateProxy.create(obj[i], notify, `${path}[${i}]`);
+        target[i] = StateProxy.create(obj[i], notify, `${path}[${i}]`, root ?? target);
       }
     } else if (obj instanceof Date) {
       target = new Date(obj.valueOf());
     } else if (obj instanceof StateProxy) {
-      target = StateProxy.#instances.get(obj).target;
+      target = obj.$target;
     } else {
       target = {};
       for (const [key, value] of Object.entries(obj)) {
-        target[key] = StateProxy.create(value, notify, path ? `${path}.${key}` : key);
+        target[key] = StateProxy.create(value, notify, path ? `${path}.${key}` : key, root ?? target);
       }
     }
 
-    return new StateProxy(target, notify, path);
+    return new StateProxy(target, notify, path, root);
   }
 
   /**
@@ -389,6 +389,9 @@ class StateProxy {
   get(target, prop, receiver) {
     if (prop === '$data') {
       return deepCopy(target);
+    }
+    if (prop.toString().startsWith('$')) {
+      return this[prop.slice(1)];
     }
 
     if (target instanceof Map) {
@@ -422,6 +425,10 @@ class StateProxy {
    * @returns {boolean} Whether the assignment was successful
    */
   set(target, prop, value) {
+    if (prop.toString().startsWith('$')) {
+      throw new Error(`[miu] '${prop}' is read-only`);
+    }
+
     if (Array.isArray(target)) {
       return this.handleArraySet(target, prop, value);
     }
@@ -445,6 +452,10 @@ class StateProxy {
    * @returns {boolean} Whether the deletion was successful
    */
   deleteProperty(target, prop) {
+    if (prop.toString().startsWith('$')) {
+      throw new Error(`[miu] '${prop}' is read-only`);
+    }
+
     const exists = prop in target;
     const deleted = delete target[prop];
 

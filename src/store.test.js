@@ -61,6 +61,12 @@ describe('Store', () => {
       expect(store2.value).toBe(2);
     });
 
+    test('exposes internal StateProxy properties', () => {
+      const store = createTestStore();
+      expect(store.user.settings.$root).toEqual(store.$state);
+      expect(store.user.settings.$path).toEqual('user.settings');
+    });
+
     test('supports falsy initial values correctly', () => {
       const store = new Store('falsyStore', {
         zero: 0,
@@ -763,6 +769,30 @@ describe('StateProxy', () => {
   const createProxy = (...args) => {
     return internals.StateProxy.create(...args);
   };
+
+  test('exposes internal properties', () => {
+    const obj = {
+      user: {
+        profile: {
+          name: {
+            first: 'John',
+            last: 'Doe'
+          }
+        }
+      }
+    };
+    const proxy = createProxy(obj);
+    const root = proxy.user.profile.name.$root;
+    expect(root).toEqual(obj);
+    expect(isProxied(root)).toEqual(true);
+    expect(proxy.user.profile.$path).toEqual('user.profile');
+    expect(() => {
+      proxy.user.profile.$root = {};
+    }).toThrow("[miu] '$root' is read-only");
+    expect(() => {
+      delete proxy.user.profile.$root;
+    }).toThrow("[miu] '$root' is read-only");
+  });
 
   test('proxies instanceof to the target object', () => {
     const map = new Map([['key1', 'value']]);
