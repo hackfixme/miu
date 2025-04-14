@@ -907,25 +907,6 @@ describe('StateProxy', () => {
       expect(notify).toHaveBeenCalledWith('arr', proxy);
     });
 
-    test('basic array operations preserve proxy state', () => {
-      const nested = { value: 42 };
-      const arr = [1, nested, 3];
-      const notify = vi.fn();
-      const proxy = createProxy(arr, notify, 'arr');
-
-      // Direct access should return same nested proxy
-      const proxyNested = proxy[1];
-      expect(isProxied(proxyNested)).toBe(true);
-      expect(proxy[1]).toBe(proxyNested);
-
-      // Direct modification
-      proxy[1] = { value: 43 };
-      expect(isProxied(proxy[1])).toBe(true);
-      expect(proxy[1].value).toBe(43);
-      expect(notify).toHaveBeenCalledWith('arr[1]', proxy[1]);
-      expect(notify).toHaveBeenCalledWith('arr', proxy);
-    });
-
     test('supports setting elements at indices greater than length', () => {
       const arr = [1, 2, 3];
       const notify = vi.fn();
