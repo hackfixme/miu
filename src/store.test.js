@@ -636,28 +636,6 @@ describe('Store', () => {
         ]);
       });
 
-      test('notifies all relevant subscribers when value changes', () => {
-        const exactChanges = [];
-        const childChanges = [];
-        const parentChanges = [];
-
-        // Set up subscribers at different levels
-        store.$subscribe('user', value => parentChanges.push(value));
-        store.$subscribe('user.name', value => exactChanges.push(value));
-        store.$subscribe('user.name.first', value => childChanges.push(value));
-
-        // Trigger a change
-        store.user.name = 'Jane';
-
-        // All subscribers should be notified
-        expect(exactChanges).toEqual(['Jane']);
-        expect(childChanges).toEqual([undefined]); // Since user.name is now a string, not an object
-        expect(parentChanges).toEqual([{
-          name: 'Jane',
-          settings: { theme: 'light' }
-        }]);
-      });
-
       test('notifies all relevant subscribers for nested object changes', () => {
         const store = new Store('test', {
           user: {
@@ -680,9 +658,12 @@ describe('Store', () => {
         store.$subscribe('user.profile', value => parentChanges.push(value));
         store.$subscribe('user.profile.name', value => parentChanges.push(value));
         store.$subscribe('user.profile.name.first', value => exactChanges.push(value));
+        store.$subscribe('user.profile.name.first.someChild', value => childChanges.push(value));
 
         store.user.profile.name.first = 'Jane';
 
+        // TODO: Maybe there shouldn't be a notification when the object doesn't exist?
+        expect(childChanges).toEqual([undefined]);
         expect(exactChanges).toEqual(['Jane']);
         expect(parentChanges).toEqual([
           { first: 'Jane', last: 'Doe' },
