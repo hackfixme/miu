@@ -16,16 +16,16 @@
   <body>
     <h1>Todo List</h1>
 
-    <p>Task count: <span data-miu-bind="todo.tasks.length->text"></span></p>
-    <input data-miu-bind="todo.newTask<->value@input" placeholder="New task...">
-    <button data-miu-bind="todo.addTask@click">Add</button>
+    <p id="count">Task count: <span data-miu-bind="todo.tasks.length->text"></span></p>
+    <input type="text" id="newTask" data-miu-bind="todo.newTask<->value@input" placeholder="New task...">
+    <button class="add" data-miu-bind="todo.addTask@click">Add</button>
 
-    <ul data-miu-for="todo.tasks">
+    <ul id="taskList" data-miu-for="todo.tasks">
       <template>
-        <li>
+        <li class="task">
           <input type="checkbox" data-miu-bind="$.done<->checked@change">
           <span data-miu-bind="$.text->text"></span>
-          <button data-miu-bind="todo.removeTask@click">×</button>
+          <button class="remove" data-miu-bind="todo.removeTask@click">×</button>
         </li>
       </template>
     </ul>
