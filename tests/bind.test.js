@@ -1,6 +1,6 @@
 import { expect, describe, test, vi } from 'vitest';
-import { bind } from './bind.js';
-import { Store } from './store.js';
+import { bind } from '../src/bind.js';
+import { Store } from '../src/store.js';
 
 describe('bind element', () => {
   test('text elements bind to store value - one-way', () => {

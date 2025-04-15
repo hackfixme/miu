@@ -33,7 +33,7 @@ development, sometime after jQuery, but before React.
 > [!NOTE]
 > Proper documentation will be added soon. In the meantime, here's a quick showcase
 > of the features and API. You can also take a look at the [examples](/examples), and
-> the fairly extensive [test suite](/src).
+> the fairly extensive [test suite](/tests).
 
 First, create a reactive store:
 ```js

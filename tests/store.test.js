@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { Store, internals } from './store.js';
+import { Store, internals } from '../src/store.js';
 
 function isProxied(v) {
   return v instanceof internals.StateProxy;
