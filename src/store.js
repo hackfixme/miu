@@ -53,9 +53,8 @@ class Store {
       throw new Error('[miu] Store name must be a string');
     }
 
-    const pathOps = PathOperations.create();
     const state = initialState instanceof Store ? initialState.$state : initialState;
-    const subMgr = Store.#subManagers.get(initialState) ?? new SubscriptionManager(pathOps);
+    const subMgr = Store.#subManagers.get(initialState) ?? new SubscriptionManager();
     const stateProxy = StateProxy.create(
       state,
       (path, value, rootState) => subMgr.notify(path, value, rootState),
@@ -65,7 +64,6 @@ class Store {
       name,
       stateProxy,
       (path, callback) => subMgr.subscribe(path, callback),
-      pathOps,
     );
 
     const apiProxy = new Proxy(api, {
@@ -97,21 +95,20 @@ class Store {
    * @param {string} name - Store name
    * @param {Object} state - Store state object
    * @param {function(string, function): function} subscribe - Function to create store subscriptions
-   * @param {Object} pathOps - Path operation utilities
    * @returns {Object} Store API methods
    */
-  _createAPI(name, state, subscribe, pathOps) {
+  _createAPI(name, state, subscribe) {
     return {
       $get: (path) => {
-        PathOperations.validatePath(path);
-        return pathOps.get(state, path);
+        Path.validatePath(path);
+        return Path.get(state, path);
       },
       $set: (path, value) => {
-        PathOperations.validatePath(path);
-        pathOps.set(state, path, value);
+        Path.validatePath(path);
+        Path.set(state, path, value);
       },
       $subscribe: (path, callback) => {
-        PathOperations.validatePath(path);
+        Path.validatePath(path);
         return subscribe(path, callback);
       },
       get $data() { return deepCopy(state); },
@@ -125,37 +122,40 @@ class Store {
  * Handles path-based operations and validation for accessing nested state
  * @class
  */
-class PathOperations {
+class Path {
   /**
-   * Creates path operation utilities for getting and setting nested values
-   * @returns {{
-   *   get: (obj: Object, path: string) => any,
-   *   set: (obj: Object, path: string, value: any) => void
-   * }}
+   * Gets a value from a nested object using a path string
+   * @param {Object} obj - The object to traverse
+   * @param {string} path - The path to the value (e.g. "foo.bar[0].baz")
+   * @returns {*} The value at the specified path, or undefined if the path doesn't exist
    */
-  static create() {
-    return {
-      get: (obj, path) => {
-        return path
-          .split(/[.\[]/)
-          .map(key => key.replace(']', ''))
-          .reduce((curr, key) => curr && curr[key], obj);
-      },
-      set: (obj, path, value) => {
-        const parts = path.split(/[.\[]/).map(key => key.replace(']', ''));
-        const lastKey = parts.pop();
+  static get(obj, path) {
+    return path
+      .split(/[.\[]/)
+      .map(key => key.replace(']', ''))
+      .reduce((curr, key) => curr && curr[key], obj);
+  }
 
-        // Create intermediate objects if they don't exist while traversing the path
-        const target = parts.reduce((curr, key) => {
-          if (!curr[key]) {
-            curr[key] = {};
-          }
-          return curr[key];
-        }, obj);
+  /**
+   * Sets a value in a nested object using a path string
+   * @param {Object} obj - The object to modify
+   * @param {string} path - The path where the value should be set (e.g. "foo.bar[0].baz")
+   * @param {*} value - The value to set at the specified path
+   * @returns {void}
+   */
+  static set(obj, path, value) {
+    const parts = path.split(/[.\[]/).map(key => key.replace(']', ''));
+    const lastKey = parts.pop();
 
-        target[lastKey] = value;
+    // Create intermediate objects if they don't exist while traversing the path
+    const target = parts.reduce((curr, key) => {
+      if (!curr[key]) {
+        curr[key] = {};
       }
-    };
+      return curr[key];
+    }, obj);
+
+    target[lastKey] = value;
   }
 
   /**
@@ -208,10 +208,10 @@ class PathOperations {
  */
 class SubscriptionManager {
   /**
-   * @param {Object} pathOps - Path operation utilities
+   * Creates an instance of SubscriptionManager.
+   * @constructor
    */
-  constructor(pathOps) {
-    this.pathOps = pathOps;
+  constructor() {
     this.listeners = new Map();
   }
 
@@ -279,7 +279,7 @@ class SubscriptionManager {
     // TODO: Optimize this to avoid looping over all listeners.
     for (const [listenerPath, callbacks] of this.listeners) {
       if (listenerPath.startsWith(path + '.')) {
-        const childValue = this.pathOps.get(rootState, listenerPath);
+        const childValue = Path.get(rootState, listenerPath);
         callbacks.forEach(callback => callback(childValue));
       }
     }
@@ -297,7 +297,7 @@ class SubscriptionManager {
       parts.pop();
       const parentPath = parts.join('.');
       if (this.listeners.has(parentPath)) {
-        const parentValue = this.pathOps.get(rootState, parentPath);
+        const parentValue = Path.get(rootState, parentPath);
         this.listeners.get(parentPath).forEach(callback => callback(parentValue));
       }
     }
@@ -622,7 +622,7 @@ export let internals;
 // Test-only exports
 if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
   internals = {
-    PathOperations,
+    Path,
     SubscriptionManager,
     StateProxy,
   };
