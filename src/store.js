@@ -1,5 +1,3 @@
-import { deepCopy } from './util.js';
-
 /**
  * A reactive state management store that supports nested objects, arrays, and Maps
  * with JSONPath-inspired path access and subscription capabilities.
@@ -54,11 +52,12 @@ class Store {
     }
 
     const state = initialState instanceof Store ? initialState.$state : initialState;
-    const subMgr = Store.#subManagers.get(initialState) ?? new SubscriptionManager();
+    const subMgr = Store.#subManagers.get(state) ?? new SubscriptionManager();
     const stateProxy = StateProxy.create(
       state,
-      (path, value, rootState) => subMgr.notify(path, value, rootState),
+      (value) => subMgr.notify(value),
     );
+    Store.#subManagers.set(stateProxy, subMgr);
 
     const api = this._createAPI(
       name,
@@ -66,7 +65,7 @@ class Store {
       (path, callback) => subMgr.subscribe(path, callback),
     );
 
-    const apiProxy = new Proxy(api, {
+    return new Proxy(api, {
       get: (target, prop) => {
         if (prop.toString().startsWith('$')) {
           return target[prop];
@@ -83,10 +82,6 @@ class Store {
       // Ensures instanceof Store is true
       getPrototypeOf: () => Store.prototype
     });
-
-    Store.#subManagers.set(apiProxy, subMgr);
-
-    return apiProxy;
   }
 
   /**
@@ -237,33 +232,32 @@ class SubscriptionManager {
 
   /**
    * Notifies subscribers of state changes
-   * @param {string} path - Path where change occurred
-   * @param {any} value - New value at path
-   * @param {Proxy} rootState - Root proxy instance containing the complete state tree
+   * @param {StateProxy|StateValue} value - The new value that was changed
    */
-  notify(path, value, rootState) {
-    this.notifyRootListeners(rootState);
-    this.notifyExactPathListeners(path, value);
-    this.notifyChildListeners(path, rootState);
-    this.notifyParentListeners(path, rootState);
+  notify(value) {
+    this.notifyRootListeners(value);
+    this.notifyExactPathListeners(value);
+    this.notifyChildListeners(value);
+    this.notifyParentListeners(value);
   }
 
   /**
    * Notifies subscribers listening to the root state
-   * @param {Proxy} rootState - Root proxy instance containing the complete state tree
+   * @param {StateProxy|StateValue} value - The new value that was changed
    */
-  notifyRootListeners(rootState) {
+  notifyRootListeners(value) {
     if (this.listeners.has('')) {
+      const rootState = value.$root;
       this.listeners.get('').forEach(callback => callback(rootState));
     }
   }
 
   /**
    * Notifies subscribers listening to exact path
-   * @param {string} path - Path where change occurred
-   * @param {any} value - New value at path
+   * @param {StateProxy|StateValue} value - The new value that was changed
    */
-  notifyExactPathListeners(path, value) {
+  notifyExactPathListeners(value) {
+    const path = value.$path;
     if (this.listeners.has(path)) {
       this.listeners.get(path).forEach(callback => callback(value));
     }
@@ -272,11 +266,12 @@ class SubscriptionManager {
   /**
    * Notifies subscribers listening to child paths
    * E.g. changes to 'user' should notify 'user.name' subscribers.
-   * @param {string} path - Parent path where change occurred
-   * @param {Proxy} rootState - Root proxy instance containing the complete state tree
+   * @param {StateProxy|StateValue} value - The new value that was changed
    */
-  notifyChildListeners(path, rootState) {
+  notifyChildListeners(value) {
     // TODO: Optimize this to avoid looping over all listeners.
+    const path = value.$path;
+    const rootState = value.$root;
     for (const [listenerPath, callbacks] of this.listeners) {
       if (listenerPath.startsWith(path + '.')) {
         const childValue = Path.get(rootState, listenerPath);
@@ -288,11 +283,11 @@ class SubscriptionManager {
   /**
    * Notifies subscribers listening to parent paths
    * E.g. changes to 'user.name' should notify 'user' subscribers.
-   * @param {string} path - Child path where change occurred
-   * @param {Proxy} rootState - Root proxy instance containing the complete state tree
+   * @param {StateProxy|StateValue} value - The new value that was changed
    */
-  notifyParentListeners(path, rootState) {
-    const parts = path.split('.');
+  notifyParentListeners(value) {
+    const rootState = value.$root;
+    const parts = value.$path.split('.');
     while (parts.length > 1) {
       parts.pop();
       const parentPath = parts.join('.');
@@ -319,20 +314,20 @@ class StateProxy {
    * @param {Proxy} [root=null] - Root proxy instance containing the complete state tree. If null, it indicates that this is the root instance.
    * @returns {Proxy} A proxy wrapper around the target object
    */
-  constructor(target, notify, path = '', root = null) {
-    this.target = target;
+  constructor(value, notify, path = '', root = null) {
+    this.value = value;
     this.notify = notify;
     this.path = path;
     this.root = root;
 
-    const proxy = new Proxy(target, this);
+    const proxy = new Proxy(value, this);
     Object.defineProperty(proxy, StateProxy.#isProxy, {
       value: true,
       configurable: false,
       enumerable: false,
       writable: false
     });
-    this.receiver = proxy;
+    this.proxy = proxy;
 
     if (!root) {
       this.root = proxy;
@@ -351,39 +346,44 @@ class StateProxy {
    * @returns {*} A proxy wrapping a copy of the target object or the original value if not proxyable
    */
   static create(obj, notify, path = '', root = null) {
-    if (obj === null || typeof obj !== 'object' ||
-        (obj instanceof StateProxy && obj.$path === path)) {
+    if (obj === null || typeof obj !== 'object') {
+      return new StateValue(obj, path, root);
+    }
+    if (obj.$path === path) {
       return obj;
     }
-
-    let target;
-    if (obj instanceof Map) {
-      target = new Map();
-    } else if (Array.isArray(obj)) {
-      target = [];
-    } else if (obj instanceof Date) {
-      target = new Date(obj.valueOf());
-    } else if (obj instanceof StateProxy) {
-      target = obj.$target;
-    } else {
-      target = {};
+    if (obj instanceof StateValue) {
+      return new StateValue(obj.$value, path, root);
     }
 
-    const proxy = new StateProxy(target, notify, path, root);
+    let value;
+    if (obj instanceof Map) {
+      value = new Map();
+    } else if (Array.isArray(obj)) {
+      value = [];
+    } else if (obj instanceof Date) {
+      value = new Date(obj.valueOf());
+    } else if (obj instanceof StateProxy) {
+      value = obj.$value;
+    } else {
+      value = {};
+    }
+
+    const proxy = new StateProxy(value, notify, path, root);
     const rootProxy = root ?? proxy;
 
     // Recursively create proxies for all nested values
     if (obj instanceof Map) {
-      for (const [key, value] of obj.entries()) {
-        target.set(key, StateProxy.create(value, notify, `${path}[${key}]`, rootProxy));
+      for (const [key, val] of obj.entries()) {
+        value.set(key, StateProxy.create(val, notify, `${path}[${key}]`, rootProxy));
       }
     } else if (Array.isArray(obj)) {
       for (let i = 0; i < obj.length; i++) {
-        target[i] = StateProxy.create(obj[i], notify, `${path}[${i}]`, rootProxy);
+        value[i] = StateProxy.create(obj[i], notify, `${path}[${i}]`, rootProxy);
       }
     } else {
-      for (const [key, value] of Object.entries(obj)) {
-        target[key] = StateProxy.create(value, notify, path ? `${path}.${key}` : key, rootProxy);
+      for (const [key, val] of Object.entries(obj)) {
+        value[key] = StateProxy.create(val, notify, path ? `${path}.${key}` : key, rootProxy);
       }
     }
 
@@ -394,10 +394,9 @@ class StateProxy {
    * Intercepts property access on the proxy.
    * @param {Object|Array|Map} target - The target object
    * @param {string|symbol} prop - The property being accessed
-   * @param {Proxy} receiver - The proxy or object derived from it
    * @returns {any} The property value
    */
-  get(target, prop, receiver) {
+  get(target, prop) {
     if (prop === '$data') {
       return deepCopy(target);
     }
@@ -415,13 +414,17 @@ class StateProxy {
 
     const value = target[prop];
 
+    if (value instanceof StateValue) {
+      return value.$value;
+    }
+
     if (typeof value === 'function') {
       // For methods defined directly on the object (like store methods),
       // bind to the proxy to maintain reactivity. For inherited methods
       // (like built-in Date/Array methods), bind to the target to preserve
       // proper 'this' context and internal slots access.
       return Object.prototype.hasOwnProperty.call(target, prop)
-        ? value.bind(receiver)
+        ? value.bind(this.proxy)
         : value.bind(target);
     }
 
@@ -433,10 +436,9 @@ class StateProxy {
    * @param {Object|Array|Map} target - The target object
    * @param {string|symbol} prop - The property being set
    * @param {any} value - The value being assigned
-   * @param {Proxy} receiver - The proxy or object derived from it
    * @returns {boolean} Whether the assignment was successful
    */
-  set(target, prop, value, receiver) {
+  set(target, prop, value) {
     if (prop.toString().startsWith('$')) {
       throw new Error(`[miu] '${prop}' is read-only`);
     }
@@ -446,12 +448,13 @@ class StateProxy {
     }
 
     const newPath = this.path ? `${this.path}.${prop}` : prop;
-    target[prop] = StateProxy.create(value, this.notify, newPath, receiver.$root);
-    this.notify(newPath, target[prop], receiver.$root);
+    const newValue = StateProxy.create(value, this.notify, newPath, this.proxy.$root);
+    target[prop] = newValue;
+    this.notify(newValue);
 
     // Only notify parent for Map changes
     if (target instanceof Map) {
-      this.notify(this.path, target, receiver.$root);
+      this.notify(this.proxy);
     }
 
     return true;
@@ -473,7 +476,8 @@ class StateProxy {
 
     if (exists && deleted) {
       const newPath = this.path ? `${this.path}.${prop}` : prop;
-      this.notify(newPath, undefined, this.receiver.$root);
+      const newValue = new StateValue(undefined, newPath, this.proxy.$root);
+      this.notify(newValue);
     }
 
     return deleted;
@@ -500,18 +504,23 @@ class StateProxy {
    */
   handleArrayMethods(target, prop, path) {
     const self = this;
-    const root = this.receiver.$root;
     return (...args) => {
-      // Arguments to methods that can add new values to the array must be proxied first.
+      // Arguments to methods that can add new values to the array must be wrapped.
       if (['push', 'unshift', 'splice', 'fill', 'concat'].includes(prop)) {
-        args = args.map(arg => StateProxy.create(arg, self.notify, path, root));
+        args = args.map((arg, i) => {
+          // For splice, skip the first two args (start, deleteCount)
+          if (prop === 'splice' && i < 2) return arg;
+          return StateProxy.create(arg, self.notify, `${path}[${target.length + i}]`, self.proxy.$root);
+        });
       }
       // TODO: Notify for any removed array elements.
       const result = Array.prototype[prop].apply(target, args);
+
       if (['push', 'pop', 'shift', 'unshift', 'splice', 'fill', 'sort', 'reverse',
            'concat', 'copyWithin'].includes(prop)) {
-        self.notify(path, target, root);
+        self.notify(self.proxy);
       }
+
       return result;
     };
   }
@@ -529,11 +538,21 @@ class StateProxy {
     if (prop === 'length') {
       const prevLength = target.length;
       target.length = value;
-      // Notify any subscribers to elements that were removed.
-      for (let i = value; i < prevLength; i++) {
-        this.notify(`${this.path}[${i}]`, undefined, this.receiver.$root);
+
+      const [start, end] = value < prevLength
+        ? [value, prevLength]  // shrinking
+        : [prevLength, value]; // growing
+
+      for (let i = start; i < end; i++) {
+        const newPath = `${this.path}[${i}]`;
+        const newValue = new StateValue(undefined, newPath, this.proxy.$root);
+        this.notify(newValue);
       }
-      this.notify(this.path, target, this.receiver.$root);
+
+      if (prevLength !== value) {
+        this.notify(this.proxy);
+      }
+
       return true;
     }
 
@@ -543,11 +562,12 @@ class StateProxy {
     }
 
     const newPath = `${this.path}[${prop}]`;
-    target[prop] = StateProxy.create(value, this.notify, newPath, this.receiver.$root);
+    const newValue = StateProxy.create(value, this.notify, newPath, this.proxy.$root);
+    target[prop] = newValue;
 
     // Notify both the specific element and the array itself
-    this.notify(newPath, target[prop], this.receiver.$root);
-    this.notify(this.path, target, this.receiver.$root);
+    this.notify(newValue);
+    this.notify(this.proxy);
 
     return true;
   }
@@ -561,16 +581,16 @@ class StateProxy {
    * @private
    */
   handleMap(target, prop, path) {
-    const root = this.receiver.$root;
+    const self = this;
     const mapOperations = {
       get: (key) => target.get(key),
 
       set: (key, value) => {
-        target.set(key, StateProxy.create(
-          value, this.notify, `${path}[${key}]`, this.receiver.$root,
-        ));
-        this.notify(`${path}[${key}]`, target.get(key), root);
-        this.notify(path, target, root);
+        const newPath = `${path}[${key}]`;
+        const newValue = StateProxy.create(value, self.notify, newPath, self.proxy.$root)
+        target.set(key, newValue);
+        self.notify(newValue);
+        self.notify(self.proxy);
         return target;
       },
 
@@ -578,8 +598,9 @@ class StateProxy {
         const hadKey = target.has(key);
         const result = target.delete(key);
         if (hadKey) {
-          this.notify(`${path}[${key}]`, undefined, root);
-          this.notify(path, target, root);
+          const value = new StateValue(undefined, `${path}[${key}]`, self.proxy.$root);
+          self.notify(value);
+          self.notify(self.proxy);
         }
         return result;
       },
@@ -588,9 +609,12 @@ class StateProxy {
         const keys = Array.from(target.keys());
         target.clear();
         // Notify listeners on all Map keys
-        keys.forEach(key => this.notify(`${path}[${key}]`, undefined, root));
+        keys.forEach(key => {
+          const value = new StateValue(undefined, `${path}[${key}]`, self.proxy.$root);
+          self.notify(value);
+        });
         // Notify listeners on the Map itself
-        this.notify(path, target, root);
+        self.notify(self.proxy);
         return undefined;
       }
     };
@@ -615,6 +639,88 @@ class StateProxy {
   }
 }
 
+/**
+ * A wrapper around primitive values in the state tree.
+ * @class
+ */
+class StateValue {
+  /**
+   * Creates a new state value instance. Its properties align with the
+   * StateProxy interface for compatibility reasons.
+   * @param {*} value - The value to store
+   * @param {string} [path=''] - Path to this value in state tree
+   * @param {StateProxy|null} [root=null] - Root state value
+   */
+  constructor(value, path = '', root = null) {
+    this.$value = value;
+    this.$path = path;
+    this.$root = root;
+  }
+
+  /**
+   * Returns the primitive value when used in operations
+   * @returns {*} The wrapped value
+   */
+  valueOf() {
+    return this.$value;
+  }
+
+  /**
+   * Returns the string representation of the value
+   * @returns {string} String representation
+   */
+  toString() {
+    return String(this.$value);
+  }
+
+  /**
+   * Converts to primitive value when used in operations
+   * @param {string} hint - The type hint
+   * @returns {*} The wrapped value
+   */
+  [Symbol.toPrimitive](hint) {
+    return this.$value;
+  }
+}
+
+/**
+ * Creates a deep copy of the provided value, handling objects, arrays, dates and maps.
+ * Removes any function references and unwraps StateValue instances.
+ * @param {*} obj - The value to deep copy
+ * @returns {*} A deep copy of the input value
+ */
+function deepCopy(obj) {
+  if (obj instanceof StateValue) {
+    obj = obj.$value;
+  }
+
+  if (obj === null || typeof obj !== 'object' || typeof obj === 'function') {
+    return typeof obj === 'function' ? undefined : obj;
+  }
+
+  if (obj instanceof Date) {
+    return new Date(obj.valueOf());
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => deepCopy(item));
+  }
+
+  if (obj instanceof Map) {
+    return new Map(
+      Array.from(obj.entries())
+        .filter(([_, v]) => typeof v !== 'function')
+        .map(([k, v]) => [k, deepCopy(v)])
+    );
+  }
+
+  return Object.fromEntries(
+    Object.entries(obj)
+      .filter(([_, v]) => typeof v !== 'function')
+      .map(([k, v]) => [k, deepCopy(v)])
+  );
+}
+
 export { Store };
 
 export let internals;
@@ -625,5 +731,6 @@ if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
     Path,
     SubscriptionManager,
     StateProxy,
+    StateValue,
   };
 }

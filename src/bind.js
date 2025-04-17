@@ -480,7 +480,7 @@ function bindEvent(element, config) {
           detail: { path: config.triggerPath },
         });
         const bindCtx = getBindContext(element);
-        config.fn.call(config.store, event, bindCtx, value);
+        config.fn.call(config.store, event, bindCtx, value.$value);
       });
     });
   } else {
@@ -525,9 +525,12 @@ function bindValue(element, config, value) {
 
   setter(getValue(config.store, element, value));
   storeSubscribe(element, config, () =>
-    config.store.$subscribe(config.path, val =>
-      setter(getValue(config.store, element, val))
-    )
+    config.store.$subscribe(config.path, val => {
+      // Primitive values can still be returned in case of
+      // Array.prototype.length or Map.prototype.size changes.
+      const v = (val === null || typeof val !== 'object') ? val : val.$value;
+      setter(getValue(config.store, element, v));
+    })
   );
 
   if (config.twoWay) {
