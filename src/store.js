@@ -52,17 +52,26 @@ class Store {
     }
 
     const state = initialState instanceof Store ? initialState.$state : initialState;
-    const subMgr = Store.#subManagers.get(state) ?? new SubscriptionManager();
+    const subMgr = Store.#subManagers.get(state?.$root) ?? new SubscriptionManager();
     const stateProxy = StateProxy.create(
       state,
       (value) => subMgr.notify(value),
+      state?.$path || '',
+      state?.$root || null,
     );
     Store.#subManagers.set(stateProxy, subMgr);
 
     const api = this._createAPI(
       name,
       stateProxy,
-      (path, callback) => subMgr.subscribe(path, callback),
+      (path, callback) => {
+        // Rewrite the path including the path of the new proxy. This ensures
+        // notifications on child state changes propagate correctly.
+        // FIXME: This shouldn't be this hacky. Figure out a cleaner way of doing this.
+        // Child SubscriptionManagers maybe?
+        const fullPath = stateProxy.$path ? (path ? `${stateProxy.$path}.${path}` : stateProxy.$path) : path;
+        return subMgr.subscribe(fullPath, callback);
+      },
     );
 
     return new Proxy(api, {

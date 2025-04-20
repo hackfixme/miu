@@ -139,6 +139,63 @@ describe('Store', () => {
         'clone2 otherValue sub got: otherValue update from clone2',
       ]);
     });
+
+    test('supports restricting store to root path', () => {
+      const data = {
+        user: {
+          name: 'John',
+          settings: {
+            theme: 'light'
+          }
+        },
+        items: ['a', 'b', 'c'],
+      }
+
+      // store1 has unrestricted access to all data.
+      const store1 = new Store('unrestricted', data);
+      expect(store1.user.name).toBe('John');
+      expect(store1.items.length).toBe(3);
+
+      // store2 only has access to user.
+      const store2 = new Store('restricted', store1.user);
+      expect(store2.name).toBe('John');
+      expect(store2.items).toBe(undefined);
+      expect(store2.$data).toEqual({
+        name: 'John',
+        settings: {
+          theme: 'light'
+        }
+      });
+
+      let changes = [];
+      store1.$subscribe('user', v => changes.push(`store1.user sub got: ${JSON.stringify(v)}`));
+      store1.$subscribe('items', v => changes.push(`store1.items sub got: ${JSON.stringify(v)}`));
+      // No-op because such key doesn't exist on store2.
+      store2.$subscribe('user', v => changes.push(`store2.user sub got: ${JSON.stringify(v)}`));
+      store2.$subscribe('name', v => changes.push(`store2.name sub got: ${v}`));
+
+      // store1 is still notified of changes on store2.
+      store2.name = 'Jane';
+      expect(changes).toEqual([
+        'store2.name sub got: Jane',
+        'store1.user sub got: {"name":"Jane","settings":{"theme":"light"}}',
+      ]);
+
+      // ... and viceversa.
+      changes.length = 0;
+      store1.user.name = 'Charlie';
+      expect(changes).toEqual([
+        'store2.name sub got: Charlie',
+        'store1.user sub got: {"name":"Charlie","settings":{"theme":"light"}}',
+      ]);
+
+      // Only store1 is notified on changes to paths not accessible to store2.
+      changes.length = 0;
+      store1.items.push('d');
+      expect(changes).toEqual([
+        'store1.items sub got: ["a","b","c","d"]',
+      ]);
+    });
   });
 
   describe('api', () => {
