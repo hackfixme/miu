@@ -1,8 +1,11 @@
+import { Store } from './store.js';
+
 const ATTRS = {
   BIND:  'data-miu-bind',
   FOR:   'data-miu-for',
   INDEX: 'data-miu-index',
   KEY:   'data-miu-key',
+  STORE: 'data-miu-store',
 };
 
 const SEL = '$';
@@ -33,14 +36,33 @@ const storeSubs = new WeakMap();
 // Setup data bindings and update DOM element values.
 // TODO: Extract DOM updating.
 function setupBindings(root) {
-  // Setup for loops first as they create new elements.
+  const rootEl = elementRoot.get(root) ?? root;
+
+  // Process store bindings first, since other bindings can depend on it.
+  const storeSelector = `[${ATTRS.STORE}]`;
+  const storeElements = typeof root.matches === 'function'
+    ? [...(root.matches(storeSelector) ? [root] : []),
+       ...root.querySelectorAll(storeSelector)]
+    : root.querySelectorAll(storeSelector);
+
+  for (const el of storeElements) {
+    if (!elementRoot.has(el)) {
+      elementRoot.set(el, rootEl);
+    }
+    const newStore = parseStoreAttr(el);
+    if (!stores.has(el)) {
+      stores.set(el, new Map());
+    }
+    const elStores = stores.get(el);
+    elStores.set(newStore.$name, newStore);
+  };
+
+  // Process for loops next, since they can create new elements.
   const forSelector = `[${ATTRS.FOR}]`;
   const forElements = typeof root.matches === 'function'
     ? [...(root.matches(forSelector) ? [root] : []),
        ...root.querySelectorAll(forSelector)]
     : root.querySelectorAll(forSelector);
-
-  const rootEl = elementRoot.get(root) ?? root;
 
   for (const el of forElements) {
     if (!elementRoot.has(el)) {
@@ -50,7 +72,7 @@ function setupBindings(root) {
     bindForEach(el, store, path);
   };
 
-  // Setup all other bindings.
+  // Finally, process value or event bindings.
   const bindSelector = `[${ATTRS.BIND}]`;
   const bindElements = typeof root.matches === 'function'
     ? [...(root.matches(bindSelector) ? [root] : []),
@@ -90,6 +112,33 @@ function getBindContext(element) {
   }
 
   return context;
+}
+
+/**
+ * Parse a store attribute and create a new Store instance.
+ * The store attribute format is "<new store name>:<store path>" where store path can be:
+ * - "<store name>.<path>" for direct store value references
+ * - "$[.<path>]" for referencing array elements within a for loop
+ * - "$value[.<path>]" for referencing object values within a for loop
+ *
+ * @param {HTMLElement} el - Element with the store attribute
+ * @returns {Store} New Store instance initialized with the referenced value
+ * @throws {Error} If the store attribute format is invalid or referenced store is not found
+ */
+function parseStoreAttr(el) {
+  const attrVal = el.getAttribute(ATTRS.STORE);
+
+  const parts = attrVal.split(':');
+  if (parts.length !== 2) {
+    throw new Error(`[miu] Invalid store binding: '${attrVal}'`);
+  }
+  const [newStoreName, storePath] = parts;
+
+  const {store, path} = storePath.charAt(0) === SEL
+    ? resolveStoreRef(ATTRS.STORE, storePath, getBindContext(el))
+    : getStoreAndPath(el, storePath);
+
+  return new Store(newStoreName, store.$get(path));
 }
 
 /**
@@ -378,15 +427,17 @@ function resolveStoreRef(attr, ref, bindCtx) {
 function getStoreAndPath(element, storePath) {
   const [storeName, ...pathParts] = storePath.split('.');
   const path = pathParts.join('.');
-  if (!storeName || !path) {
-    throw new Error(`[miu] Invalid path format: ${storePath}`);
+
+  // First check if the store is bound directly to the element.
+  let store = getStore(element, storeName);
+  if (store) {
+    return { store, path };
   }
 
-  const rootEl = elementRoot.get(element);
-  const elStores = stores.get(rootEl);
-  const store = elStores?.get(storeName);
+  // Otherwise try its root.
+  store = getStore(elementRoot.get(element), storeName);
   if (!store) {
-    throw new Error(`[miu] Store ${storeName} not found for element ${element.tagName}`);
+    throw new Error(`[miu] Store '${storeName}' not found for element '${element.tagName}'`);
   }
 
   return { store, path };
@@ -736,4 +787,17 @@ function bind(element, newStores) {
   setupBindings(el);
 }
 
-export { bind };
+/**
+ * Return a Store instance bound to a specific element.
+ * @param {HTMLElement|string} element - The DOM element or CSS selector to the element
+ * @param {string} storeName - The name of the store
+ * @returns {Store}
+ * @throws {Error} If the element is null or cannot be found
+ */
+function getStore(element, storeName) {
+  const el = typeof element === 'string' ? document.querySelector(element) : element;
+  if (!el) throw new Error('[miu] Element not found');
+  return stores.get(element)?.get(storeName);
+}
+
+export { bind, getStore };

@@ -1,5 +1,5 @@
 import { expect, describe, test, vi } from 'vitest';
-import { bind } from '../src/bind.js';
+import { bind, getStore } from '../src/bind.js';
 import { Store } from '../src/store.js';
 
 describe('bind element', () => {
@@ -1074,6 +1074,76 @@ describe('for', () => {
 
     expect(() => bind(document.body, [store]))
       .toThrow(`Value of ${storeName}.value is not iterable`);
+  });
+});
+
+describe('store', () => {
+  test('supports binding cloned stores to elements', () => {
+    const rootStoreName = `test-${randomString()}`;
+    const rootStore = new Store(rootStoreName, {
+      users: [
+        {
+          name: 'Alice',
+          addresses: []
+        },
+        {
+          name: 'Bob',
+          addresses: []
+        },
+      ]
+    });
+
+    document.body.innerHTML = `
+      <div class="users" data-miu-for="${rootStoreName}.users">
+        <template>
+          <div class="user">
+            <span class="userName" data-miu-bind="$.name->text"></span>
+            <ul class="addresses"
+                data-miu-store="addresses:$.addresses"
+                data-miu-for="addresses">
+              <template>
+                <li class="address">
+                  <span class="addressType" data-miu-bind="$.type->text"></span>
+                  <span class="addressCountry" data-miu-bind="$.country->text"></span>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </template>
+      </div>
+    `;
+    bind(document.body, [rootStore]);
+
+    // Check initial render
+    let users = document.querySelectorAll('div.user');
+    expect(users.length).toBe(2);
+    expect(users[0].querySelector('.userName').textContent).toBe('Alice');
+    expect(users[1].querySelector('.userName').textContent).toBe('Bob');
+
+    let user1Addresses = users[0].querySelectorAll('li.address');
+    let user2Addresses = users[1].querySelectorAll('li.address');
+    expect(user1Addresses.length).toBe(0);
+    expect(user2Addresses.length).toBe(0);
+
+    // Child store updates UI
+    const user1AddressStore = getStore(users[0].querySelector('ul.addresses'), 'addresses');
+    user1AddressStore.push({ type: 'home', country: 'DE'});
+    user1Addresses = users[0].querySelectorAll('li.address');
+    expect(user1Addresses.length).toBe(1);
+    expect(user1Addresses[0].querySelector('.addressType').textContent).toBe('home');
+    expect(user1Addresses[0].querySelector('.addressCountry').textContent).toBe('DE');
+    // The parent store is updated
+    expect(rootStore.users[0].addresses).toEqual([{ type: 'home', country: 'DE'}]);
+
+    // Parent store updates UI
+    rootStore.users[1].addresses.push({ type: 'work', country: 'NL'});
+    user2Addresses = users[1].querySelectorAll('li.address');
+    expect(user2Addresses.length).toBe(1);
+    expect(user2Addresses[0].querySelector('.addressType').textContent).toBe('work');
+    expect(user2Addresses[0].querySelector('.addressCountry').textContent).toBe('NL');
+    // The child store is updated
+    const user2AddressStore = getStore(users[1].querySelector('ul.addresses'), 'addresses');
+    expect(user2AddressStore.$data).toEqual([{ type: 'work', country: 'NL'}]);
   });
 });
 
