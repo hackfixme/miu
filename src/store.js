@@ -1,3 +1,8 @@
+// Identifies the parent property on state proxy objects.
+const PARENT = Symbol('parent');
+// Identifies the roots property on state proxy objects.
+const ROOTS = Symbol('roots');
+
 /**
  * A reactive state management store that supports nested objects, arrays, and Maps
  * with JSONPath-inspired path access and subscription capabilities.
@@ -33,16 +38,12 @@
  * store.$data; // { user: { name: 'Jane'} }
  */
 class Store {
-  // A map of Store instances to SubscriptionManager instances. Used for
-  // subscription sharing between parent and child Stores.
-  static #subManagers = new WeakMap();
-
   /**
    * Creates a new Store instance
    * @constructor
    * @param {string} name - Unique identifier for the store
-   * @param {Object|Store} [initialState={}] - Initial state object.
-       If it's an existing Store, its state and subscriptions will be shared.
+   * @param {Object|Store|Proxy} [initialState={}] - Initial state object.
+   *   If it's an existing Store or Proxy, its state and subscriptions will be shared.
    * @throws {Error} If name is not a string
    * @returns {Proxy} Proxied store instance with reactive capabilities
    */
@@ -52,26 +53,17 @@ class Store {
     }
 
     const state = initialState instanceof Store ? initialState.$state : initialState;
-    const subMgr = Store.#subManagers.get(state?.$root) ?? new SubscriptionManager();
     const stateProxy = StateProxy.create(
       state,
-      (value) => subMgr.notify(value),
-      state?.$path || '',
-      state?.$root || null,
+      state?.$key || '',
+      state ? state[PARENT] : null,
+      state instanceof StateProxy ? state : null,
     );
-    Store.#subManagers.set(stateProxy, subMgr);
 
     const api = this._createAPI(
       name,
       stateProxy,
-      (path, callback) => {
-        // Rewrite the path including the path of the new proxy. This ensures
-        // notifications on child state changes propagate correctly.
-        // FIXME: This shouldn't be this hacky. Figure out a cleaner way of doing this.
-        // Child SubscriptionManagers maybe?
-        const fullPath = stateProxy.$path ? (path ? `${stateProxy.$path}.${path}` : stateProxy.$path) : path;
-        return subMgr.subscribe(fullPath, callback);
-      },
+      (path, callback) => SubscriptionManager.subscribe(stateProxy, path, callback),
     );
 
     return new Proxy(api, {
@@ -97,7 +89,7 @@ class Store {
    * Creates the public API methods for the store
    * @private
    * @param {string} name - Store name
-   * @param {Object} state - Store state object
+   * @param {Proxy} state - Store state object
    * @param {function(string, function): function} subscribe - Function to create store subscriptions
    * @returns {Object} Store API methods
    */
@@ -105,11 +97,11 @@ class Store {
     return {
       $get: (path) => {
         Path.validatePath(path);
-        return Path.get(state, path);
+        return Path.getValue(state, path);
       },
       $set: (path, value) => {
         Path.validatePath(path);
-        Path.set(state, path, value);
+        Path.setValue(state, path, value);
       },
       $subscribe: (path, callback) => {
         Path.validatePath(path);
@@ -128,12 +120,34 @@ class Store {
  */
 class Path {
   /**
+   * Gets the path string for a state object relative to an optional parent
+   * @param {Proxy|StateValue} obj - The state object to get path for
+   * @param {Proxy} [parent=null] - Optional parent to get path relative to
+   * @returns {string} The path string representation
+   */
+  static get(obj, parent = null) {
+    if (!(obj instanceof StateProxy || obj instanceof StateValue)) return '';
+
+    const wrapKey = (v, isLast) => isLast ? v.$key
+      : (Array.isArray(v[PARENT]) || v[PARENT] instanceof Map) ?
+        `[${v.$key}]` : `.${v.$key}`;
+
+    let path = '';
+    for (; obj && obj !== parent; obj = obj[PARENT]) {
+      const isLast = !obj[PARENT]?.$key || obj[PARENT] === parent;
+      path = wrapKey(obj, isLast) + path;
+    }
+
+    return path;
+  }
+
+  /**
    * Gets a value from a nested object using a path string
    * @param {Object} obj - The object to traverse
    * @param {string} path - The path to the value (e.g. "foo.bar[0].baz")
    * @returns {*} The value at the specified path, or undefined if the path doesn't exist
    */
-  static get(obj, path) {
+  static getValue(obj, path) {
     return path
       .split(/[.\[]/)
       .map(key => key.replace(']', ''))
@@ -147,7 +161,7 @@ class Path {
    * @param {*} value - The value to set at the specified path
    * @returns {void}
    */
-  static set(obj, path, value) {
+  static setValue(obj, path, value) {
     const parts = path.split(/[.\[]/).map(key => key.replace(']', ''));
     const lastKey = parts.pop();
 
@@ -211,158 +225,181 @@ class Path {
  * @class
  */
 class SubscriptionManager {
-  /**
-   * Creates an instance of SubscriptionManager.
-   * @constructor
-   */
-  constructor() {
-    this.listeners = new Map();
-  }
+  // Mapping of root state objects to a map of state paths to callback functions
+  // that will be called when a value matching that path changes.
+  static #listeners = new WeakMap();
 
   /**
    * Subscribes to changes at a specific path
-   * @param {string} path - Path to subscribe to
-   * @param {function} callback - Callback to invoke on changes
+   * @param {Proxy} root - The root state object of the subscription
+   * @param {string} path - State path relative to the root to subscribe to
+   * @param {function} callback - Function to invoke on state changes
    * @returns {function} Unsubscribe function
    */
-  subscribe(path, callback) {
-    if (!this.listeners.has(path)) {
-      this.listeners.set(path, new Set());
+  static subscribe(root, path, callback) {
+    if (!this.#listeners.has(root)) {
+      this.#listeners.set(root, new Map());
     }
-    this.listeners.get(path).add(callback);
+    const listeners = this.#listeners.get(root);
+    if (!listeners.has(path)) {
+      listeners.set(path, new Set());
+    }
+    listeners.get(path).add(callback);
 
     return () => {
-      this.listeners.get(path).delete(callback);
-      if (this.listeners.get(path).size === 0) {
-        this.listeners.delete(path);
+      listeners.get(path).delete(callback);
+      if (listeners.get(path).size === 0) {
+        listeners.delete(path);
       }
     };
   }
 
   /**
    * Notifies subscribers of state changes
-   * @param {StateProxy|StateValue} value - The new value that was changed
+   * @param {Proxy} root - The root state object of the subscription
+   * @param {Proxy|StateValue} value - The new value that was changed
    */
-  notify(value) {
-    this.notifyRootListeners(value);
-    this.notifyExactPathListeners(value);
-    this.notifyChildListeners(value);
-    this.notifyParentListeners(value);
-  }
+  static notify(root, value) {
+    if (!this.#listeners.has(root)) return;
 
-  /**
-   * Notifies subscribers listening to the root state
-   * @param {StateProxy|StateValue} value - The new value that was changed
-   */
-  notifyRootListeners(value) {
-    if (this.listeners.has('')) {
-      const rootState = value.$root;
-      this.listeners.get('').forEach(callback => callback(rootState));
+    const path = Path.get(value, root);
+    const listeners = this.#listeners.get(root);
+
+    // Notify root listeners
+    if (listeners.has('')) {
+      listeners.get('').forEach(callback => callback(root));
     }
-  }
 
-  /**
-   * Notifies subscribers listening to exact path
-   * @param {StateProxy|StateValue} value - The new value that was changed
-   */
-  notifyExactPathListeners(value) {
-    const path = value.$path;
-    if (this.listeners.has(path)) {
-      this.listeners.get(path).forEach(callback => callback(value));
+    // Notify exact path listeners
+    if (listeners.has(path)) {
+      listeners.get(path).forEach(callback => callback(value));
     }
-  }
 
-  /**
-   * Notifies subscribers listening to child paths
-   * E.g. changes to 'user' should notify 'user.name' subscribers.
-   * @param {StateProxy|StateValue} value - The new value that was changed
-   */
-  notifyChildListeners(value) {
-    // TODO: Optimize this to avoid looping over all listeners.
-    const path = value.$path;
-    const rootState = value.$root;
-    for (const [listenerPath, callbacks] of this.listeners) {
+    // Notify child listeners
+    for (const [listenerPath, callbacks] of listeners) {
       if (listenerPath.startsWith(path + '.')) {
-        const childValue = Path.get(rootState, listenerPath);
+        const childValue = Path.getValue(root, listenerPath);
         callbacks.forEach(callback => callback(childValue));
       }
     }
-  }
 
-  /**
-   * Notifies subscribers listening to parent paths
-   * E.g. changes to 'user.name' should notify 'user' subscribers.
-   * @param {StateProxy|StateValue} value - The new value that was changed
-   */
-  notifyParentListeners(value) {
-    const rootState = value.$root;
-    const parts = value.$path.split('.');
+    // Notify parent listeners
+    const parts = path.split('.');
     while (parts.length > 1) {
       parts.pop();
       const parentPath = parts.join('.');
-      if (this.listeners.has(parentPath)) {
-        const parentValue = Path.get(rootState, parentPath);
-        this.listeners.get(parentPath).forEach(callback => callback(parentValue));
+      if (listeners.has(parentPath)) {
+        const parentValue = Path.getValue(root, parentPath);
+        listeners.get(parentPath).forEach(callback => callback(parentValue));
       }
     }
   }
 }
 
 /**
- * A reactive proxy for state management with support for nested objects, arrays, and Maps.
+ * A reactive proxy for state management with support for nested objects, arrays, and maps.
  */
 class StateProxy {
   // Symbol to identify StateProxy instances.
   static #isProxy = Symbol('isProxy')
+  // Root state objects associated with this proxy. Used for change notifications.
+  #roots = new Set();
 
   /**
    * Creates a new StateProxy instance.
-   * @param {Object|Array|Map} target - The object to make reactive.
-   * @param {function(string, any, Proxy): void} notify - Function to notify subscribers of state changes
-   * @param {string} [path=''] - Dot notation path in the state to the current object
-   * @param {Proxy} [root=null] - Root proxy instance containing the complete state tree. If null, it indicates that this is the root instance.
+   * @param {Object|Array|Map} value - The object to make reactive
+   * @param {string} [key=''] - Identifier of this object at this path in the state tree
+   * @param {Proxy} [parent=null] - Parent of this object in the state tree
    * @returns {Proxy} A proxy wrapper around the target object
    */
-  constructor(value, notify, path = '', root = null) {
+  constructor(value, key = '', parent = null) {
     this.value = value;
-    this.notify = notify;
-    this.path = path;
-    this.root = root;
+    this.key = key;
+    this.notify = v => this.#roots.forEach(r => SubscriptionManager.notify(r, v));
 
-    const proxy = new Proxy(value, this);
-    Object.defineProperty(proxy, StateProxy.#isProxy, {
+    this.proxy = new Proxy(value, this);
+    Object.defineProperty(this.proxy, StateProxy.#isProxy, {
       value: true,
       configurable: false,
       enumerable: false,
       writable: false
     });
-    this.proxy = proxy;
+    Object.defineProperty(this.proxy, PARENT, {
+      value: parent,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
+    Object.defineProperty(this.proxy, ROOTS, {
+      value: this.#roots,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
 
-    if (!root) {
-      this.root = proxy;
+    if (parent) {
+      for (const root of parent[ROOTS]) {
+        this.#roots.add(root);
+      }
+    } else {
+      this.#roots.add(this.proxy);
     }
 
-    return proxy;
+    return this.proxy;
+  }
+
+  /**
+   * Adds a root proxy to this instance and all nested proxy instances.
+   * Used internally to correctly propagate state change notifications.
+   * @param {Proxy} instance - The state proxy instance to modify
+   * @param {Proxy} root - The root proxy instance to add
+   * @throws {TypeError} If root is not a valid StateProxy instance
+   * @private
+   */
+  static #addRoot(instance, root) {
+    if (!root?.[this.#isProxy]) {
+      throw new TypeError('[miu] root must be a StateProxy instance');
+    }
+
+    instance[ROOTS].add(root);
+
+    const processValue = (val) => {
+      if (val?.[this.#isProxy]) {
+        this.#addRoot(val, root);
+      }
+    };
+
+    if (instance instanceof Map) {
+      for (const val of instance.values()) {
+        processValue(val);
+      }
+    } else if (Array.isArray(instance)) {
+      instance.forEach(processValue);
+    } else {
+      Object.values(instance).forEach(processValue);
+    }
   }
 
   /**
    * Creates a state proxy that recursively wraps a deep copy of an object and
    * its nested properties. The original object remains unchanged.
    * @param {*} obj - The target object to proxy
-   * @param {function(string, any, Proxy} notify - Function to notify subscribers of state changes
-   * @param {string} [path=''] - Dot notation path in the state to the current object
-   * @param {Proxy} [root=null] - Root proxy instance containing the complete state tree. If null, it indicates that this is the root instance.
+   * @param {string} [key=''] - Identifier of this object at this path in the state tree
+   * @param {Proxy} [parent=null] - Parent of this object in the state tree
+   * @param {Proxy} [root=null] - Root proxy instance containing the complete state tree.
+   *   If null, it indicates that this is the root instance.
    * @returns {*} A proxy wrapping a copy of the target object or the original value if not proxyable
    */
-  static create(obj, notify, path = '', root = null) {
+  static create(obj, key = '', parent = null, root = null) {
     if (obj === null || typeof obj !== 'object') {
-      return new StateValue(obj, path, root);
-    }
-    if (obj.$path === path) {
-      return obj;
+      return new StateValue(obj, key, parent);
     }
     if (obj instanceof StateValue) {
-      return new StateValue(obj.$value, path, root);
+      return obj;
+    }
+    if (obj instanceof StateProxy) {
+      if (root) StateProxy.#addRoot(obj, root);
+      return obj;
     }
 
     let value;
@@ -372,27 +409,25 @@ class StateProxy {
       value = [];
     } else if (obj instanceof Date) {
       value = new Date(obj.valueOf());
-    } else if (obj instanceof StateProxy) {
-      value = obj.$value;
     } else {
       value = {};
     }
 
-    const proxy = new StateProxy(value, notify, path, root);
+    const proxy = new StateProxy(value, key, parent);
     const rootProxy = root ?? proxy;
 
     // Recursively create proxies for all nested values
     if (obj instanceof Map) {
       for (const [key, val] of obj.entries()) {
-        value.set(key, StateProxy.create(val, notify, `${path}[${key}]`, rootProxy));
+        value.set(key, StateProxy.create(val, key, proxy, rootProxy));
       }
     } else if (Array.isArray(obj)) {
       for (let i = 0; i < obj.length; i++) {
-        value[i] = StateProxy.create(obj[i], notify, `${path}[${i}]`, rootProxy);
+        value[i] = StateProxy.create(obj[i], i.toString(), proxy, rootProxy);
       }
     } else {
       for (const [key, val] of Object.entries(obj)) {
-        value[key] = StateProxy.create(val, notify, path ? `${path}.${key}` : key, rootProxy);
+        value[key] = StateProxy.create(val, key, proxy, rootProxy);
       }
     }
 
@@ -414,7 +449,7 @@ class StateProxy {
     }
 
     if (target instanceof Map) {
-      return this.handleMap(target, prop, this.path);
+      return this.handleMap(target, prop);
     }
 
     if (Array.isArray(target) && Array.prototype[prop] && typeof Array.prototype[prop] === 'function') {
@@ -456,8 +491,7 @@ class StateProxy {
       return this.handleArraySet(target, prop, value);
     }
 
-    const newPath = this.path ? `${this.path}.${prop}` : prop;
-    const newValue = StateProxy.create(value, this.notify, newPath, this.proxy.$root);
+    const newValue = StateProxy.create(value, prop, this.proxy);
     target[prop] = newValue;
     this.notify(newValue);
 
@@ -484,8 +518,7 @@ class StateProxy {
     const deleted = delete target[prop];
 
     if (exists && deleted) {
-      const newPath = this.path ? `${this.path}.${prop}` : prop;
-      const newValue = new StateValue(undefined, newPath, this.proxy.$root);
+      const newValue = new StateValue(undefined, prop, this.proxy);
       this.notify(newValue);
     }
 
@@ -507,11 +540,10 @@ class StateProxy {
    * Handles array method interception for reactive updates
    * @param {Array} target - Target array
    * @param {string} prop - Method name
-   * @param {string} path - Current path
    * @returns {Function} Wrapped array method
    * @private
    */
-  handleArrayMethods(target, prop, path) {
+  handleArrayMethods(target, prop) {
     const self = this;
     return (...args) => {
       // Arguments to methods that can add new values to the array must be wrapped.
@@ -519,7 +551,7 @@ class StateProxy {
         args = args.map((arg, i) => {
           // For splice, skip the first two args (start, deleteCount)
           if (prop === 'splice' && i < 2) return arg;
-          return StateProxy.create(arg, self.notify, `${path}[${target.length + i}]`, self.proxy.$root);
+          return StateProxy.create(arg, (target.length + i).toString(), self.proxy);
         });
       }
       // TODO: Notify for any removed array elements.
@@ -539,7 +571,6 @@ class StateProxy {
    * @param {Array} target - Target array
    * @param {string|number} prop - Array index or 'length'
    * @param {any} value - Value to set
-   * @param {string} path - Current path
    * @returns {boolean} Success status
    * @private
    */
@@ -553,8 +584,7 @@ class StateProxy {
         : [prevLength, value]; // growing
 
       for (let i = start; i < end; i++) {
-        const newPath = `${this.path}[${i}]`;
-        const newValue = new StateValue(undefined, newPath, this.proxy.$root);
+        const newValue = new StateValue(undefined, i.toString(), this.proxy);
         this.notify(newValue);
       }
 
@@ -570,8 +600,7 @@ class StateProxy {
       throw new Error(`[miu] Invalid array index: ${prop}`);
     }
 
-    const newPath = `${this.path}[${prop}]`;
-    const newValue = StateProxy.create(value, this.notify, newPath, this.proxy.$root);
+    const newValue = StateProxy.create(value, prop, this.proxy);
     target[prop] = newValue;
 
     // Notify both the specific element and the array itself
@@ -585,18 +614,16 @@ class StateProxy {
    * Handles Map operations for reactive updates
    * @param {Map} target - Target Map
    * @param {string} prop - Method or key name
-   * @param {string} path - Current path
    * @returns {Function|any} Map method or value
    * @private
    */
-  handleMap(target, prop, path) {
+  handleMap(target, prop) {
     const self = this;
     const mapOperations = {
       get: (key) => target.get(key),
 
       set: (key, value) => {
-        const newPath = `${path}[${key}]`;
-        const newValue = StateProxy.create(value, self.notify, newPath, self.proxy.$root)
+        const newValue = StateProxy.create(value, key, self.proxy);
         target.set(key, newValue);
         self.notify(newValue);
         self.notify(self.proxy);
@@ -607,7 +634,7 @@ class StateProxy {
         const hadKey = target.has(key);
         const result = target.delete(key);
         if (hadKey) {
-          const value = new StateValue(undefined, `${path}[${key}]`, self.proxy.$root);
+          const value = new StateValue(undefined, key, self.proxy);
           self.notify(value);
           self.notify(self.proxy);
         }
@@ -619,7 +646,7 @@ class StateProxy {
         target.clear();
         // Notify listeners on all Map keys
         keys.forEach(key => {
-          const value = new StateValue(undefined, `${path}[${key}]`, self.proxy.$root);
+          const value = new StateValue(undefined, key, self.proxy);
           self.notify(value);
         });
         // Notify listeners on the Map itself
@@ -654,16 +681,23 @@ class StateProxy {
  */
 class StateValue {
   /**
-   * Creates a new state value instance. Its properties align with the
-   * StateProxy interface for compatibility reasons.
+   * Creates a new state value instance for primitive values that can't be
+   * proxied. Its properties align with the StateProxy interface for
+   * compatibility reasons.
    * @param {*} value - The value to store
-   * @param {string} [path=''] - Path to this value in state tree
-   * @param {StateProxy|null} [root=null] - Root state value
+   * @param {string} [key=''] - Identifier of this object at this path in the state tree
+   * @param {Proxy} [parent=null] - Parent of this object in the state tree
    */
-  constructor(value, path = '', root = null) {
+  constructor(value, key = '', parent = null) {
     this.$value = value;
-    this.$path = path;
-    this.$root = root;
+    this.$key = key;
+
+    Object.defineProperty(this, PARENT, {
+      value: parent,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
   }
 
   /**
