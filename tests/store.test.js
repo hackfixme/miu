@@ -345,11 +345,6 @@ describe('Store', () => {
         expect(() => store.$set('items[-1]', 'x')).toThrow('Invalid array index: -1');
       });
 
-      test('throws error when setting Map.size', () => {
-        expect(() => store.$set('userMap.size', 0))
-          .toThrow('Cannot set property size of #<Map> which has only a getter');
-      });
-
       testInvalidPathSyntax('$set', '');
     });
 
@@ -1391,3 +1386,84 @@ describe('StateProxy', () => {
   });
 });
 
+describe('Path', () => {
+  const createObject = () => {
+    return {
+      some: {
+        deep: {
+          nested: new Map([['value', { a: [{ x: 1 }, { x: 2 }, { x: 3 }] }]])
+        }
+      },
+      items: [{ x: 1 }, { x: 2 }, { x: 3 }],
+      userMap: new Map([['u1', { role: 'admin' }]])
+    };
+  };
+
+  const createProxy = () => StateProxy.create(createObject());
+
+  let proxy, object;
+  beforeEach(() => {
+    object = createObject();
+    proxy = createProxy();
+  });
+
+  describe('get', () => {
+    test('with null parent', () => {
+      expect(Path.get(proxy)).toBe('');
+      expect(Path.get(proxy.some)).toBe('some');
+      expect(Path.get(proxy.items[0])).toBe('items[0]');
+      expect(Path.get(proxy.userMap.u1)).toBe('userMap[u1]');
+      expect(
+        Path.get(proxy.some.deep.nested.value.a[1])
+      ).toBe('some.deep.nested[value].a[1]');
+    });
+
+    test('with parent', () => {
+      expect(
+        Path.get(proxy.some.deep.nested.value.a[1], proxy.some.deep)
+      ).toBe('nested[value].a[1]');
+    });
+
+    test('with nonexistent parent', () => {
+      expect(
+        Path.get(proxy.some.deep.nested.value.a[1], proxy.items)
+      ).toBe('some.deep.nested[value].a[1]');
+    });
+  });
+
+  describe('getValue', () => {
+    test.each([
+      ['proxy', () => proxy],
+      ['object', () => object]
+    ])('%s', (name, getInstance) => {
+      const instance = getInstance();
+      expect(
+        Path.getValue(instance, 'items')
+      ).toEqual([{ x: 1 }, { x: 2 }, { x: 3 }]);
+      expect(Path.getValue(instance, 'items[2]')).toEqual({ x: 3 });
+      expect(Path.getValue(instance, 'items[3]')).toBe(undefined);
+      expect(Path.getValue(instance, 'userMap[u1]')).toEqual({ role: 'admin' });
+      expect(Path.getValue(instance, 'userMap[u1].role')).toBe('admin');
+      expect(
+        Path.getValue(instance.some.deep, 'nested.value.a[1]')
+      ).toEqual({ x: 2 });
+    });
+  });
+
+  describe('setValue', () => {
+    test.each([
+      ['proxy', () => proxy],
+      ['object', () => object]
+    ])('%s', (name, getInstance) => {
+      const instance = getInstance();
+      Path.setValue(instance, 'items[1]', { a: 10 });
+      expect(instance.items).toEqual([{ x: 1 }, { a: 10 }, { x: 3 }]);
+      Path.setValue(instance, 'items[5]', { a: 15 });
+      expect(instance.items).toEqual([{ x: 1 }, { a: 10 }, { x: 3 }, undefined, undefined, { a: 15 }]);
+      Path.setValue(instance, 'userMap[u2]', { a: 1 });
+      expect(instance.userMap.get('u2')).toEqual({ a: 1 });
+      Path.setValue(instance, 'newValue', 5);
+      expect(instance.newValue).toBe(5);
+    });
+  });
+});

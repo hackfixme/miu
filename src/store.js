@@ -151,7 +151,13 @@ class Path {
     return path
       .split(/[.\[]/)
       .map(key => key.replace(']', ''))
-      .reduce((curr, key) => curr && curr[key], obj);
+      .reduce((curr, key) => {
+        if (!curr) return undefined;
+        if (curr instanceof Map) {
+          return key in Map.prototype ? curr[key] : curr.get(key);
+        }
+        return curr[key];
+      }, obj);
   }
 
   /**
@@ -165,15 +171,19 @@ class Path {
     const parts = path.split(/[.\[]/).map(key => key.replace(']', ''));
     const lastKey = parts.pop();
 
-    // Create intermediate objects if they don't exist while traversing the path
     const target = parts.reduce((curr, key) => {
-      if (!curr[key]) {
+      // Create intermediate objects if they don't exist while traversing the path
+      if (!curr[key] && !(curr instanceof Map)) {
         curr[key] = {};
       }
-      return curr[key];
+      return curr instanceof Map ? curr.get(key) : curr[key];
     }, obj);
 
-    target[lastKey] = value;
+    if (target instanceof Map) {
+      target.set(lastKey, value);
+    } else {
+      target[lastKey] = value;
+    }
   }
 
   /**
