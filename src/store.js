@@ -148,11 +148,19 @@ class Path {
    * @returns {*} The value at the specified path, or undefined if the path doesn't exist
    */
   static getValue(obj, path) {
+    if (path === '') return obj;
+
     return path
+      // Split path on dots and opening brackets (e.g., "foo.bar[0]" -> ["foo", "bar", "0]"])
       .split(/[.\[]/)
+      // Remove closing brackets from keys (e.g., "0]" -> "0")
       .map(key => key.replace(']', ''))
+      // Remove empty strings that occur when path starts with '['
+      .filter(key => key !== '')
+      // Traverse the object using each key in sequence
       .reduce((curr, key) => {
         if (!curr) return undefined;
+        // Handle Map objects specially to avoid accessing prototype methods
         if (curr instanceof Map) {
           return key in Map.prototype ? curr[key] : curr.get(key);
         }
@@ -168,7 +176,12 @@ class Path {
    * @returns {void}
    */
   static setValue(obj, path, value) {
-    const parts = path.split(/[.\[]/).map(key => key.replace(']', ''));
+    // We can't replace the root object here, so this is a no-op.
+    if (path === '') return;
+
+    const parts = path.split(/[.\[]/)
+      .map(key => key.replace(']', ''))
+      .filter(key => key !== '');
     const lastKey = parts.pop();
 
     const target = parts.reduce((curr, key) => {
@@ -213,7 +226,10 @@ class Path {
 
     const parts = [
       '^',                       // Start of string
-      '(?:[a-zA-Z_$][\\w$]*)',   // First property name: must start with letter/underscore/$ followed by word chars or $
+      '(?:',                     // Start non-capturing group for first part
+        '[a-zA-Z_$][\\w$]*|',    // Property name: must start with letter/underscore/$ followed by word chars or $
+        '\\[[^\\[\\]]+\\]',      // OR bracket notation at root level
+      ')',                       // End non-capturing group
       '(?:',                     // Start non-capturing group for repeating parts
         '\\.[a-zA-Z_$][\\w$]*|', // Dot notation: dot followed by property name
         '\\[[^\\[\\]]+\\]',      // Bracket notation: anything except brackets inside []
@@ -225,7 +241,7 @@ class Path {
     const pathRegex = new RegExp(parts.join(''));
 
     if (!pathRegex.test(path)) {
-      throw new Error('[miu] Invalid path syntax');
+      throw new Error(`[miu] Invalid path syntax: '${path}'`);
     }
   }
 }
@@ -607,7 +623,7 @@ class StateProxy {
 
     const index = parseInt(prop, 10);
     if (isNaN(index) || index < 0) {
-      throw new Error(`[miu] Invalid array index: ${prop}`);
+      throw new Error(`[miu] Invalid array index: '${prop}'`);
     }
 
     const newValue = StateProxy.create(value, prop, this.proxy);

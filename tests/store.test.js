@@ -291,6 +291,21 @@ describe('Store', () => {
         expect(store.$get('userMap.u1.role')).toBe('admin');
       });
 
+      test('supports array as root object', () => {
+        const store = new Store('arrStore', [{ x: 1 }, { x: 2 }, { nested: { x: 3 } }]);
+        expect(store.$get('[0]')).toEqual({x: 1});
+        expect(store.$get('[2].nested')).toEqual({x: 3});
+        expect(store.$get('[5]')).toBe(undefined);
+      });
+
+      test('supports map as root object', () => {
+        const store = new Store('mapStore',
+          new Map([['a', { x: 1 }], ['b', { x: 2 }], ['c', { nested: { x: 3 } }]]),
+        );
+        expect(store.$get('a')).toEqual({x: 1});
+        expect(store.$get('c.nested')).toEqual({x: 3});
+      });
+
       test('returns undefined for non-existent paths', () => {
         expect(store.$get('user.nonexistent')).toBeUndefined();
         expect(store.$get('items[99]')).toBeUndefined();
@@ -341,8 +356,28 @@ describe('Store', () => {
         expect(store.items).toEqual(['a', undefined, undefined, undefined, undefined]);
       });
 
+      test('supports array as root object', () => {
+        const store = new Store('arrStore', [{ x: 1 }, { x: 2 }, { nested: { x: 3 } }]);
+        store.$set('[0]', { x: 10 });
+        store.$set('[2].nested', { x: 20 });
+        expect(store.$data).toEqual(
+          [{ x: 10 }, { x: 2 }, { nested: { x: 20 } }]
+        );
+      });
+
+      test('supports map as root object', () => {
+        const store = new Store('mapStore',
+          new Map([['a', { x: 1 }], ['b', { x: 2 }], ['c', { nested: { x: 3 } }]]),
+        );
+        store.$set('a', { x: 10 });
+        store.$set('c.nested', { x: 20 });
+        expect(store.$data).toEqual(
+          new Map([['a', { x: 10 }], ['b', { x: 2 }], ['c', { nested: { x: 20 } }]]),
+        );
+      });
+
       test('throws error for invalid array indices', () => {
-        expect(() => store.$set('items[-1]', 'x')).toThrow('Invalid array index: -1');
+        expect(() => store.$set('items[-1]', 'x')).toThrow("Invalid array index: '-1'");
       });
 
       testInvalidPathSyntax('$set', '');
@@ -1437,6 +1472,7 @@ describe('Path', () => {
       ['object', () => object]
     ])('%s', (name, getInstance) => {
       const instance = getInstance();
+      expect(Path.getValue(instance, '')).toEqual(instance);
       expect(
         Path.getValue(instance, 'items')
       ).toEqual([{ x: 1 }, { x: 2 }, { x: 3 }]);
@@ -1447,6 +1483,36 @@ describe('Path', () => {
       expect(
         Path.getValue(instance.some.deep, 'nested.value.a[1]')
       ).toEqual({ x: 2 });
+    });
+
+    test('array as root object', () => {
+      const arr = [{ x: 1 }, { x: 2 }, { nested: { x: 3 } }];
+      const arrProxy = StateProxy.create(arr);
+      expect(Path.getValue(arr, '[0]')).toEqual({ x: 1 });
+      expect(Path.getValue(arrProxy, '[1]')).toEqual({ x: 2 });
+      expect(Path.getValue(arr, '0')).toEqual({ x: 1 });
+      expect(Path.getValue(arrProxy, '1')).toEqual({ x: 2 });
+      expect(Path.getValue(arr, '[2].nested')).toEqual({ x: 3 });
+      expect(Path.getValue(arrProxy, '[2].nested')).toEqual({ x: 3 });
+      // This notation is technically supported, but will fail path validation
+      // when used on Store instances.
+      expect(Path.getValue(arr, '2.nested')).toEqual({ x: 3 });
+      expect(Path.getValue(arrProxy, '2.nested')).toEqual({ x: 3 });
+      expect(Path.getValue(arr, '[5]')).toBe(undefined);
+      expect(Path.getValue(arrProxy, '[5]')).toBe(undefined);
+    });
+
+    test('map as root object', () => {
+      const map = new Map([['a', { x: 1 }], ['b', { x: 2 }], ['c', { nested: { x: 3 } }]]);
+      const mapProxy = StateProxy.create(map);
+      expect(Path.getValue(map, 'a')).toEqual({ x: 1 });
+      expect(Path.getValue(mapProxy, 'b')).toEqual({ x: 2 });
+      expect(Path.getValue(map, '[a]')).toEqual({ x: 1 });
+      expect(Path.getValue(mapProxy, '[b]')).toEqual({ x: 2 });
+      expect(Path.getValue(map, '[c].nested')).toEqual({ x: 3 });
+      expect(Path.getValue(mapProxy, '[c].nested')).toEqual({ x: 3 });
+      expect(Path.getValue(map, 'c.nested')).toEqual({ x: 3 });
+      expect(Path.getValue(mapProxy, 'c.nested')).toEqual({ x: 3 });
     });
   });
 
