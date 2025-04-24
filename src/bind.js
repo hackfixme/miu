@@ -111,9 +111,12 @@ class BindContext {
   }
 }
 
-// Return context data for elements within a for loop. The data includes the
-// item, the item index within the array, the store associated with the parent
-// for element, and the store path to the items.
+/**
+ * Return context data for elements within a for loop.
+ * @param {HTMLElement} element - Element to get context for
+ * @returns {BindContext|null} Context containing the item, index, key, and store info,
+ *   or null if element is not within a for loop
+ */
 function getBindContext(element) {
   const forParent = element.parentElement.closest(`[${ATTRS.FOR}]`);
   const parentCtx = bindContexts.get(forParent);
@@ -398,6 +401,15 @@ function parseForAttr(el) {
   return getStoreAndPath(el, attrVal);
 }
 
+/**
+ * Resolve a store reference within a for loop context.
+ * Handles special references: $, $key, $index, $.path, $value.path
+ * @param {string} attr - The attribute type being resolved (for error messages)
+ * @param {string} ref - The reference string to resolve
+ * @param {BindContext} bindCtx - The loop context to resolve against
+ * @returns {{store: Store, path: string, key?: string}} Resolved store and path
+ * @throws {Error} If reference format is invalid or context is missing
+ */
 function resolveStoreRef(attr, ref, bindCtx) {
   // TODO: Make sure that Symbol keys are supported.
   if (!bindCtx) {
@@ -446,6 +458,13 @@ function resolveStoreRef(attr, ref, bindCtx) {
   throw new Error(`[miu] Invalid store reference: ${ref}`);
 }
 
+/**
+ * Get the store and path from a store path string.
+ * @param {HTMLElement} element - Element to look up store from
+ * @param {string} storePath - Path in format "storeName.path.to.value"
+ * @returns {{store: Store, path: string}} Store instance and path
+ * @throws {Error} If store cannot be found for element
+ */
 function getStoreAndPath(element, storePath) {
   const [storeName, ...pathParts] = storePath.split('.');
   const path = pathParts.join('.');
@@ -465,9 +484,14 @@ function getStoreAndPath(element, storePath) {
   return { store, path };
 }
 
-// Attach the handler function for the event on the element. A handler for a
-// unique event name will only be added once.
-// FIXME: It should be possible to add multiple handlers for the same event...
+/**
+ * Add an event handler to an element for a specific event.
+ * Handler is only added once per unique event name.
+ * FIXME: It should be possible to add multiple handlers for the same event.
+ * @param {HTMLElement} element - Element to add handler to
+ * @param {string} event - Event name to listen for
+ * @param {Function} handler - Event handler function
+ */
 function addEventHandler(element, event, handler) {
   if (!eventHandlers.has(element)) {
     eventHandlers.set(element, new Map());
@@ -479,8 +503,13 @@ function addEventHandler(element, event, handler) {
   }
 }
 
-// Subscribe to the element to the store value at path. No-op if the
-// subscription for the same element and path already exists.
+/**
+ * Subscribe an element to store value changes.
+ * Only creates one subscription per unique combination of element, bind config and path.
+ * @param {HTMLElement} element - Element to subscribe
+ * @param {Object} bindConfig - Binding configuration
+ * @param {Function} subFn - Function that returns unsubscribe function
+ */
 function storeSubscribe(element, bindConfig, subFn) {
   if (!storeSubs.has(element)) {
     storeSubs.set(element, new Map());
@@ -653,8 +682,15 @@ function createTextSetter(element) {
   };
 }
 
-// Return the value to set on the element. If the value is a function (computed value),
-// it will be evaluated with the store and the element's bind context.
+/**
+ * Return the value to set on the element. If the value is a function (computed value),
+ * it will be evaluated with the store and the element's bind context.
+ * @param {Store} store - Store instance for function context
+ * @param {HTMLElement} element - Element to get bind context from
+ * @param {*} value - Value to resolve
+ * @returns {*} Resolved value
+ * @private
+ */
 function getValue(store, element, value) {
   if (typeof value === 'function') {
     value = value.call(store, getBindContext(element));
@@ -718,9 +754,16 @@ const getIndexedIterator = (items, path) => {
   }();
 };
 
-// Iterate over array items from the store at path, creating or removing elements
-// as needed. Bindings and event handlers are also created for child elements.
-// This attempts to render elements efficiently, by reusing ones that already exist.
+/**
+ * Bind a for-loop template to an array/object/Map in the store. The binding
+ * creates, updates, or removes elements as the store items change, and event
+ * and value bindings are created for any new elements. It updates elements
+ * efficiently, reusing ones that already exist.
+ * @param {HTMLElement} element - Element containing the template
+ * @param {Store} store - Store containing the items
+ * @param {string} path - Path to the items in the store
+ * @throws {Error} If template element is missing or items are not iterable
+ */
 function bindForEach(element, store, path) {
   const template = element.firstElementChild;
   if (!(template instanceof HTMLTemplateElement)) {
@@ -788,8 +831,13 @@ function bindForEach(element, store, path) {
   render(store.$get(path));
 }
 
-// Bind an element and its children to the given stores. element can either be a
-// CSS selector or an HTMLElement.
+/**
+ * Bind an element and its children to one or more stores.
+ * Store names must be unique per each element.
+ * @param {HTMLElement|string} element - Element or CSS selector
+ * @param {Store[]} newStores - Array of stores to bind
+ * @throws {Error} If the element is not found or store name conflicts
+ */
 function bind(element, newStores) {
   const el = typeof element === 'string' ? document.querySelector(element) : element;
   if (!el) throw new Error('[miu] Element not found');
