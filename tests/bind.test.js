@@ -417,7 +417,7 @@ describe('bind event', () => {
 
     expect(storeHandler).toHaveBeenCalledWith(
       expect.any(MouseEvent),
-      undefined
+      null
     );
   });
 
@@ -477,7 +477,7 @@ describe('bind event', () => {
 
     expect(globalHandler).toHaveBeenCalledWith(
       expect.any(MouseEvent),
-      undefined
+      null
     );
 
     delete globalThis.globalHandler;
@@ -570,7 +570,7 @@ describe('bind event', () => {
     expect(event.type).toBe('store:change');
     expect(event.detail).toEqual({ path: 'count' });
     expect(value).toBe(1);
-    expect(bindCtx).toBeUndefined();
+    expect(bindCtx).toBeNull();
   });
 
   test('removes store subscriptions of removed elements', () => {

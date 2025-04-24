@@ -88,6 +88,29 @@ function setupBindings(root) {
   };
 }
 
+/**
+ * Context data for elements within a for loop, providing access to the current
+ * item, its position, and associated store information.
+ */
+class BindContext {
+  /**
+   * @param {*} item - The current item from the array/object being iterated
+   * @param {number} index - Zero-based index of the item in the array/object
+   * @param {string|undefined} key - Key of the item (for Objects/Maps) or undefined (for Arrays)
+   * @param {HTMLElement} element - The DOM element associated with this item
+   * @param {Store} store - Store instance containing the iterated array/object
+   * @param {string} path - Path to the array/object within the store
+   */
+  constructor(item, index, key, element, store, path) {
+    this.item = item;
+    this.index = index;
+    this.key = key;
+    this.element = element;
+    this.store = store;
+    this.path = path;
+  }
+}
+
 // Return context data for elements within a for loop. The data includes the
 // item, the item index within the array, the store associated with the parent
 // for element, and the store path to the items.
@@ -96,22 +119,21 @@ function getBindContext(element) {
   const parentCtx = bindContexts.get(forParent);
   const idxEl = element.closest(`[${ATTRS.INDEX}]`);
 
-  let context;
   if (parentCtx?.store && idxEl) {
     const idx = idxEl.getAttribute(ATTRS.INDEX);
     const key = idxEl.getAttribute(ATTRS.KEY);
-    context = {
+    return new BindContext(
       // The Store implementation supports bracket notation for Maps, objects and arrays.
-      item: parentCtx.items[key || idx],
-      index: idx,
-      key: key,
-      element: idxEl,
-      store: parentCtx.store,
-      path: parentCtx.path,
-    };
+      parentCtx.items[key || idx],
+      idx,
+      key,
+      idxEl,
+      parentCtx.store,
+      parentCtx.path
+    );
   }
 
-  return context;
+  return null;
 }
 
 /**
@@ -378,8 +400,8 @@ function parseForAttr(el) {
 
 function resolveStoreRef(attr, ref, bindCtx) {
   // TODO: Make sure that Symbol keys are supported.
-  if (typeof bindCtx === 'undefined') {
-    throw new Error(`[miu] bind context is undefined for ${ref}`);
+  if (!bindCtx) {
+    throw new Error(`[miu] bind context not found for '${ref}'`);
   }
 
   // The store implementation simplifies the path syntax here.
